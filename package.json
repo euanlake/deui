@@ -11,7 +11,11 @@
     "pkg:build-client": "cross-env NODE_ENV=production npm run build --silent",
     "pkg:build": "npm run pkg:build-client",
     "prepack": "npm run pkg:build && node ./bin/strip-package.js",
-    "postpack": "mv package.backup.json package.json"
+    "postpack": "mv package.backup.json package.json",
+    "dev:local": "vite --host --mode development",
+    "dev:prod": "vite --host --mode production",
+    "build:dev": "tsc && vite build --mode development",
+    "build:prod": "tsc && vite build --mode production"
   },
   "dependencies": {
     "@emotion/react": "^11.7.1",

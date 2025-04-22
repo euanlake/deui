@@ -37,3 +37,37 @@ The error means "failed to establish connection" and happens after a successful 
 systemctl status dbus
 systemctl enable bluetooth.service
 ```
+
+## Environment Configuration for R1 API
+
+This project includes environment-specific configurations for connecting to R1 API endpoints.
+
+### Environment Files
+
+- `.env.development`: Configuration for development environment
+- `.env.production`: Configuration for production environment
+
+### Environment Variables
+
+| Variable | Description | Default (Development) | Default (Production) |
+|----------|-------------|----------------------|----------------------|
+| `VITE_R1_API_URL` | Base URL for R1 REST API | `http://localhost:8000/api` | `http://<tablet-ip>/api` |
+| `VITE_R1_WS_URL` | Base URL for R1 WebSocket API | `ws://localhost:8000/ws` | `ws://<tablet-ip>/ws` |
+
+### Running with Different Environments
+
+```bash
+# Development environment
+npm run dev:local
+
+# Production environment
+npm run dev:prod
+
+# Build for development
+npm run build:dev
+
+# Build for production
+npm run build:prod
+```
+
+For more details, see the documentation in `src/config/README.md`.
