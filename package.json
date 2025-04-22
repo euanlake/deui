@@ -4,6 +4,7 @@
   "scripts": {
     "build": "tsc && vite build",
     "dev": "vite --host",
+    "start": "npm run dev",
     "prettier": "prettier --write src test",
     "preview": "vite preview",
     "test": "jest",

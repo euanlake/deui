@@ -85,17 +85,17 @@ This document outlines the detailed steps needed to replace our current integrat
   - [X] Remove other backend-specific dependencies
   - _Prompt: "Remove all server-side dependencies that are no longer needed now that R1 handles the backend functionality. Update package.json to reflect these changes."_
 
-- [ ] **Remove Server-Side Code**
-  - [ ] Remove `src/server` directory and all contained files
-  - [ ] Update build scripts to no longer build server components
-  - [ ] Remove server-specific middleware and utility functions
+- [X] **Remove Server-Side Code**
+  - [X] Remove `src/server` directory and all contained files
+  - [X] Update build scripts to no longer build server components
+  - [X] Remove server-specific middleware and utility functions
   - _Prompt: "Remove the server-side code directory and all related files. Update build scripts to exclude server components and remove any utility functions specific to the server."_
 
-- [ ] **Update Package Scripts**
-  - [ ] Remove `build-server` script from package.json
-  - [ ] Update `dev` script to no longer start local server
-  - [ ] Remove `ws` script that starts WebSocket server
-  - [ ] Update `start` script to only launch client application
+- [X] **Update Package Scripts**
+  - [X] Remove `build-server` script from package.json
+  - [X] Update `dev` script to no longer start local server
+  - [X] Remove `ws` script that starts WebSocket server
+  - [X] Update `start` script to only launch client application
   - _Prompt: "Update the package scripts to remove server-related commands and simplify to client-only operation. Modify the development workflow to account for R1 running as a separate service."_
 
 - [ ] **Update Configuration**
