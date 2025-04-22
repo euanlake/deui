@@ -154,6 +154,11 @@ const ERROR_CODE_TO_MESSAGE: Record<string, string> = {
   'profile.upload_failed': 'Failed to upload profile.',
   'profile.invalid_format': 'Invalid profile format.',
   'profile.too_large': 'Profile is too large.',
+  'profile.not_found': 'The requested profile was not found.',
+  'profile.list_failed': 'Failed to retrieve the list of profiles.',
+  'profile.select_failed': 'Failed to select the profile.',
+  'profile.parse_error': 'The profile could not be parsed properly.',
+  'profile.unsupported_version': 'The profile version is not supported.',
   
   // General errors
   'general.bad_request': 'Bad request. Please check your inputs.',
@@ -208,7 +213,10 @@ const CATEGORY_SUGGESTIONS: Record<ErrorCategory, string[]> = {
   [ErrorCategory.PROFILE]: [
     'Verify that the profile format is correct',
     'Try simplifying the profile if it is too complex',
-    'Check that all required fields are present'
+    'Check that all required fields are present',
+    'Ensure the profile uses supported step types',
+    'Try uploading a different profile',
+    'Restart the machine and try again'
   ],
   [ErrorCategory.GENERAL]: [
     'Try again in a few moments',

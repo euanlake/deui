@@ -70,10 +70,10 @@ This document outlines the detailed steps needed to replace our current integrat
   - [ ] Support multiple scale types (Felicita Arc, Decent Scale, Bookoo)
   - _Prompt: "Implement scale support using R1's scale API. Create UI components for scale operations and real-time weight display, supporting all compatible scale types."_
 
-- [ ] **Enhance Profile Management**
-  - [ ] Update profile handling to support v2 JSON profiles
-  - [ ] Create interface for uploading profiles to the machine
-  - [ ] Implement profile selection and application
+- [X] **Enhance Profile Management**
+  - [X] Update profile handling to support v2 JSON profiles
+  - [X] Create interface for uploading profiles to the machine
+  - [X] Implement profile selection and application
   - _Prompt: "Enhance the profile management to support v2 JSON profiles. Create an interface for uploading, selecting, and applying profiles through R1's API."_
 
 ## Server-Side Removal
