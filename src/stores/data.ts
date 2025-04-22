@@ -880,7 +880,7 @@ export const useDataStore = create<DataStore>((set, get) => {
         r1AutoReconnect: true,
         r1ConnectionSettings: {
             hostname: 'localhost',
-            port: 8443,
+            port: 8080,
             useSecureProtocol: false
         },
         

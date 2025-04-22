@@ -102,8 +102,8 @@ export function useServerUrl({
     const preferredHostname = localStorage.getItem('r1_hostname')
     const hostname = params.get('h') || preferredHostname || 'localhost'
     
-    // Get port from URL params or use default (R1 typically uses port 8443)
-    const defaultPort = 8443
+    // Get port from URL params or use default (R1 typically uses port 8080)
+    const defaultPort = 8080
     const port = Number(params.get('p') || defaultPort)
 
     // Construct the URL
