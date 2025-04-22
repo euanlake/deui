@@ -73,19 +73,24 @@ export class R1WebSocketAdapter implements WebSocketApi {
    */
   private getOrCreateConnection(endpoint: string): WebSocketConnection {
     const url = `${this.websocketUrl}${endpoint}`;
+    console.log(`Getting or creating connection to: ${url}`);
     
     if (!this.activeConnections.has(url)) {
+      console.log(`Creating new connection to: ${url}`);
       const connection = new R1WebSocketConnection(url);
       
       // Add close handler to remove connection from active connections when closed
       const originalClose = connection.close.bind(connection);
       connection.close = () => {
+        console.log(`Closing connection to: ${url}`);
         originalClose();
         this.activeConnections.delete(url);
       };
       
       // Store the connection
       this.activeConnections.set(url, connection);
+    } else {
+      console.log(`Reusing existing connection to: ${url}`);
     }
     
     return this.activeConnections.get(url)!;

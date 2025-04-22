@@ -590,24 +590,34 @@ export const useDataStore = create<DataStore>((set, get) => {
                 const setupWebsocket = (
                     connectionMethod: () => WebSocketConnection,
                     connectionName: string,
-                    stateUpdateHandler: (data: any) => void
-                ): WebSocketConnection => {
+                    onData: (data: any) => void
+                ) => {
+                    console.log(`Setting up ${connectionName} WebSocket connection`);
                     const connection = connectionMethod();
                     
                     connection.onMessage((data) => {
-                        // Reset connection attempts on successful data
-                        if (get().r1ConnectionAttempts > 0) {
-                            set({ r1ConnectionAttempts: 0 });
-                        }
+                        console.log(`${connectionName} data received:`, data);
                         
-                        stateUpdateHandler(data);
-                        // Sync with legacy state after each update
-                        get().syncR1StateToLegacyState();
+                        // Force UI update with new reference by creating shallow copy
+                        const newData = {...data};
+                        
+                        // Call the handler to update state
+                        onData(newData);
+                        
+                        // Trigger legacy state sync after data update
+                        setTimeout(() => {
+                            get().syncR1StateToLegacyState();
+                        }, 0);
                     });
                     
                     connection.onError((error) => {
                         console.error(`WebSocket error (${connectionName}):`, error);
-                        set({ r1LastConnectionError: `WebSocket ${connectionName}: ${error.message}` });
+                        
+                        // Log error but don't change connection status as other connections may be working
+                        set(state => ({
+                            ...state,
+                            r1LastConnectionError: `${connectionName} error: ${error.message}`
+                        }));
                     });
                     
                     connection.onClose(() => {
@@ -634,7 +644,10 @@ export const useDataStore = create<DataStore>((set, get) => {
                 const machineSnapshotConnection = setupWebsocket(
                     () => apiProvider.websocket.connectToMachineSnapshot(),
                     'machineSnapshot',
-                    (data) => set({ machineState: data })
+                    (data) => {
+                        console.log('Updating machine state with:', data);
+                        set({ machineState: data });
+                    }
                 );
                 
                 const scaleSnapshotConnection = setupWebsocket(

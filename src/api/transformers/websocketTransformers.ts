@@ -5,22 +5,25 @@ import { ScaleSnapshot } from '../models/Scale';
  * Transform R1 machine snapshot data to our application's MachineState format
  */
 export function transformR1MachineSnapshotToMachineState(r1Data: any): MachineState {
-  // R1 sends full snapshot objects in its WebSocket messages
+  // Add logging to debug the incoming data
+  console.log('Raw machine snapshot data:', JSON.stringify(r1Data));
+  
+  // Ensure proper type conversions and handle potential nulls
   return {
-    timestamp: r1Data.timestamp,
-    state: r1Data.state.state,
-    substate: r1Data.state.substate,
-    flow: r1Data.flow,
-    pressure: r1Data.pressure,
-    targetFlow: r1Data.targetFlow,
-    targetPressure: r1Data.targetPressure,
-    mixTemperature: r1Data.mixTemperature,
-    groupTemperature: r1Data.groupTemperature,
-    targetMixTemperature: r1Data.targetMixTemperature,
-    targetGroupTemperature: r1Data.targetGroupTemperature,
-    profileFrame: r1Data.profileFrame,
-    steamTemperature: r1Data.steamTemperature,
-    usbChargerEnabled: false // Not available in real-time stream, we'll need to use the REST API to get this
+    timestamp: r1Data.timestamp || new Date().toISOString(),
+    state: r1Data.state?.state || 'unknown',
+    substate: r1Data.state?.substate || 'unknown',
+    flow: Number(r1Data.flow || 0),
+    pressure: Number(r1Data.pressure || 0),
+    targetFlow: Number(r1Data.targetFlow || 0),
+    targetPressure: Number(r1Data.targetPressure || 0),
+    mixTemperature: Number(r1Data.mixTemperature || 0),
+    groupTemperature: Number(r1Data.groupTemperature || 0),
+    targetMixTemperature: Number(r1Data.targetMixTemperature || 0),
+    targetGroupTemperature: Number(r1Data.targetGroupTemperature || 0),
+    profileFrame: Number(r1Data.profileFrame || 0),
+    steamTemperature: Number(r1Data.steamTemperature || 0),
+    usbChargerEnabled: Boolean(r1Data.usbChargerEnabled || false)
   };
 }
 
@@ -29,9 +32,9 @@ export function transformR1MachineSnapshotToMachineState(r1Data: any): MachineSt
  */
 export function transformR1ScaleSnapshotToScale(r1Data: any): ScaleSnapshot {
   return {
-    timestamp: r1Data.timestamp,
-    weight: r1Data.weight,
-    batteryLevel: r1Data.batteryLevel || 0 // Default to 0 if not provided
+    timestamp: r1Data.timestamp || new Date().toISOString(),
+    weight: Number(r1Data.weight || 0),
+    batteryLevel: Number(r1Data.batteryLevel || 0) // Default to 0 if not provided
   };
 }
 
@@ -40,14 +43,14 @@ export function transformR1ScaleSnapshotToScale(r1Data: any): ScaleSnapshot {
  */
 export function transformR1ShotSettingsToShotSettings(r1Data: any): any {
   return {
-    steamSetting: r1Data.steamSetting,
-    targetSteamTemp: r1Data.targetSteamTemp,
-    targetSteamDuration: r1Data.targetSteamDuration,
-    targetHotWaterTemp: r1Data.targetHotWaterTemp,
-    targetHotWaterVolume: r1Data.targetHotWaterVolume,
-    targetHotWaterDuration: r1Data.targetHotWaterDuration,
-    targetShotVolume: r1Data.targetShotVolume,
-    groupTemp: r1Data.groupTemp
+    steamSetting: Number(r1Data.steamSetting || 0),
+    targetSteamTemp: Number(r1Data.targetSteamTemp || 0),
+    targetSteamDuration: Number(r1Data.targetSteamDuration || 0),
+    targetHotWaterTemp: Number(r1Data.targetHotWaterTemp || 0),
+    targetHotWaterVolume: Number(r1Data.targetHotWaterVolume || 0),
+    targetHotWaterDuration: Number(r1Data.targetHotWaterDuration || 0),
+    targetShotVolume: Number(r1Data.targetShotVolume || 0),
+    groupTemp: Number(r1Data.groupTemp || 0)
   };
 }
 
@@ -56,8 +59,8 @@ export function transformR1ShotSettingsToShotSettings(r1Data: any): any {
  */
 export function transformR1WaterLevelsToWaterLevels(r1Data: any): any {
   return {
-    currentPercentage: r1Data.currentPercentage,
-    warningThresholdPercentage: r1Data.warningThresholdPercentage
+    currentPercentage: Number(r1Data.currentPercentage || 0),
+    warningThresholdPercentage: Number(r1Data.warningThresholdPercentage || 0)
   };
 }
 
@@ -69,6 +72,8 @@ export function transformR1WebSocketData(
   endpoint: 'machine' | 'scale' | 'shotSettings' | 'waterLevels', 
   data: any
 ): any {
+  console.log(`Transforming ${endpoint} data:`, data);
+  
   switch (endpoint) {
     case 'machine':
       return transformR1MachineSnapshotToMachineState(data);

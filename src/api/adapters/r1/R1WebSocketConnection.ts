@@ -70,16 +70,38 @@ export class R1WebSocketConnection implements WebSocketConnection {
     if (!this.messageCallback) return;
     
     try {
+      // Log raw data for debugging
+      console.log(`Raw WebSocket data (${this.endpointType}):`, event.data);
+      
       // Parse the JSON data from the message
-      const data = JSON.parse(event.data);
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch (parseError) {
+        console.error(`Error parsing WebSocket JSON for ${this.endpointType}:`, parseError);
+        console.log(`Raw data that couldn't be parsed:`, event.data);
+        
+        // Try to recover if data is not valid JSON
+        if (typeof event.data === 'string') {
+          // If it's just a string, use it directly
+          data = { raw: event.data, timestamp: new Date().toISOString() };
+        } else {
+          // If it's already an object, use it as is
+          data = event.data;
+        }
+      }
+      
+      console.log(`Parsed WebSocket data (${this.endpointType}):`, data);
       
       // Transform the data using our transformer functions
       const transformedData = transformR1WebSocketData(this.endpointType, data);
       
+      console.log(`Transformed data (${this.endpointType}):`, transformedData);
+      
       // Pass the transformed data to the callback
       this.messageCallback(transformedData);
     } catch (error) {
-      console.error('Error parsing WebSocket message:', error, event.data);
+      console.error('Error handling WebSocket message:', error, event.data);
       
       // Generate endpoint-specific error code based on the type of stream
       let errorCode: string;
