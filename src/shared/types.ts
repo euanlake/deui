@@ -457,7 +457,6 @@ export interface WsOpenChunk {
 export type Chunk = WsCloseChunk | WsErrorChunk | WsMessageChunk | WsOpenChunk
 
 export enum MachineMode {
-    Server = 'Server',
     Espresso = 'Espresso',
     Steam = 'Steam',
     Flush = 'Flush',
@@ -535,15 +534,15 @@ export const Layer = {
     Drawer: 'drawers',
 }
 
-export enum ServerErrorCode {
-    NotPoweredOn = 1,
-    AlreadyScanning,
-    AlreadyConnecting,
-    AlreadyConnected,
-    NotConnected,
-    UnknownCharacteristic,
-    AlreadyWritingShot,
-    Locked,
+export enum R1ApiErrorCode {
+    ConnectionFailed = 1,
+    InvalidRequest,
+    NotFound,
+    DeviceNotFound,
+    ScaleNotConnected,
+    InvalidProfile,
+    Timeout,
+    InternalServerError
 }
 
 export enum SteamSetting {

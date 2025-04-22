@@ -77,47 +77,31 @@ export function useCurrentTime() {
 
 export function useMetrics({ verticalLayout }: { verticalLayout?: boolean } = {}) {
     const { machineMode } = useUiStore()
-
-    const [measurableMachineMode, setMeasurableMachineMode] = useState(
-        machineMode === MachineMode.Server ? MachineMode.Espresso : machineMode
-    )
-
-    useEffect(() => {
-        if (machineMode === MachineMode.Server) {
-            return
-        }
-
-        setMeasurableMachineMode(machineMode)
-    }, [machineMode])
-
-    return [...(verticalLayout ? VerticalMetrics : Metrics)[measurableMachineMode]]
+    return [...(verticalLayout ? VerticalMetrics : Metrics)[machineMode]]
 }
 
 export function useServerUrl({ 
-    protocol = 'http', 
-    useR1Api = process.env.USE_R1_API === 'true'
+    protocol = 'http'
 } = {}) {
     const [params] = useSearchParams()
 
     // Get hostname from URL params, stored preferences, or default to current hostname
     const preferredHostname = localStorage.getItem('r1_hostname')
-    const hostname = params.get('h') || 
-                    (useR1Api ? preferredHostname || 'localhost' : location.hostname)
+    const hostname = params.get('h') || preferredHostname || 'localhost'
     
-    // Get port from URL params or use appropriate default
-    // R1 typically uses port 8443, legacy API uses 3001
-    const defaultPort = useR1Api ? 8443 : 3001
-    const port = Number(params.get('p') || void 0) || defaultPort
+    // Get port from URL params or use default (R1 typically uses port 8443)
+    const defaultPort = 8443
+    const port = Number(params.get('p') || defaultPort)
 
     // Construct the URL
     const serverUrl = `${protocol}://${hostname}:${port}`
     
-    // Store the hostname for future use if using R1
+    // Store the hostname for future use
     useEffect(() => {
-        if (useR1Api && hostname !== 'localhost' && hostname !== location.hostname) {
+        if (hostname !== 'localhost' && hostname !== location.hostname) {
             localStorage.setItem('r1_hostname', hostname)
         }
-    }, [useR1Api, hostname])
+    }, [hostname])
 
     return serverUrl
 }

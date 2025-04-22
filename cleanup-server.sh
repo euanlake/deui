@@ -11,10 +11,8 @@ rm -rf src/server
 echo "Removing server-related type definitions..."
 rm -f types/express.d.ts
 
-# 3. Update tsconfig.json to remove server-related configs
-echo "Updating TypeScript configuration..."
-# Use sed to update tsconfig.json
-# This would need to be customized based on actual tsconfig content
+# 3. Make the cleanup script executable
+chmod +x cleanup-server.sh
 
 echo "Cleanup complete! The application is now a frontend-only client for R1."
 echo "Please review the application to ensure all server references have been properly updated."
