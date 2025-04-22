@@ -335,7 +335,7 @@ export const useDataStore = create<DataStore>((set, get) => {
         // Legacy connection method
         async connect(url, { onDeviceReady } = {}) {
             // If R1 API is available, use it instead
-            if (process.env.USE_R1_API === 'true') {
+            if (import.meta.env.VITE_USE_R1_API === 'true') {
                 return await get().connectToApi(url);
             }
             
@@ -984,8 +984,7 @@ export function useAutoConnectEffect() {
     // Get server URL with appropriate protocol
     const legacyUrl = useServerUrl({ protocol: 'ws' });
     const r1Url = useServerUrl({ 
-        protocol: r1ConnectionSettings.useSecureProtocol ? 'https' : 'http',
-        useR1Api: true 
+        protocol: r1ConnectionSettings.useSecureProtocol ? 'https' : 'http'
     });
 
     useEffect(() => {
@@ -1011,7 +1010,7 @@ export function useAutoConnectEffect() {
                                 clearReffedTimeoutId(timeoutIdRef);
 
                                 timeoutIdRef.current = window.setTimeout(() => {
-                                    if (mounted && machineModeRef.current === MachineMode.Server) {
+                                    if (mounted && machineModeRef.current === ('Server' as any)) {
                                         setMachineMode(MachineMode.Espresso);
                                     }
                                 }, 2000);
@@ -1025,7 +1024,7 @@ export function useAutoConnectEffect() {
                     attempts = Math.min(40, attempts + 1);
                 } finally {
                     if (reachedReadyness) {
-                        setMachineMode(MachineMode.Server);
+                        setMachineMode('Server' as any);
                     }
 
                     reachedReadyness = false;
@@ -1160,7 +1159,7 @@ export function useCurrentProfileLabel() {
 
 // Helper to create the appropriate API provider
 function createApiProvider(url: string): ApiProvider {
-    if (process.env.NODE_ENV === 'development' && process.env.USE_MOCK_API === 'true') {
+    if (import.meta.env.MODE === 'development' && import.meta.env.VITE_USE_MOCK_API === 'true') {
         return new MockApiProvider()
     }
     

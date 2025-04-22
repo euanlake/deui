@@ -111,7 +111,7 @@ export function useServerUrl({
  * @returns {boolean} true if R1 is available at configured URL
  */
 export function useR1Availability() {
-    const serverUrl = useServerUrl({ useR1Api: true })
+    const serverUrl = useServerUrl()
     const [isAvailable, setIsAvailable] = useState(false)
     
     useEffect(() => {
@@ -150,5 +150,5 @@ export function useShouldUseR1Api() {
     const forceR1 = params.get('useR1') === 'true'
     
     // Use R1 if explicitly enabled via env var + available, or forced via URL
-    return (process.env.USE_R1_API === 'true' && isR1Available) || forceR1
+    return (import.meta.env.VITE_USE_R1_API === 'true' && isR1Available) || forceR1
 }
