@@ -465,14 +465,61 @@ export const useDataStore = create<DataStore>((set, get) => {
 
         // Legacy disconnect method
         disconnect() {
-            // If using R1 API, use its disconnect method
-            if (get().isUsingR1Api()) {
-                return get().apiProvider?.device ? get().disconnect() : void 0;
+            // Clear any reconnect timer
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
             }
             
-            // Legacy disconnect
-            ctrl?.discard()
-            ctrl = undefined
+            if (get().isUsingR1Api()) {
+                const { 
+                    apiProvider,
+                    machineSnapshotConnection,
+                    scaleSnapshotConnection,
+                    shotSettingsConnection,
+                    waterLevelsConnection 
+                } = get();
+                
+                // Close all WebSocket connections
+                machineSnapshotConnection?.close();
+                scaleSnapshotConnection?.close();
+                shotSettingsConnection?.close();
+                waterLevelsConnection?.close();
+                
+                // Close all connections if using R1WebSocketAdapter
+                if (apiProvider && 'closeAll' in apiProvider.websocket) {
+                    (apiProvider.websocket as any).closeAll();
+                }
+                
+                // Reset connection state
+                set({
+                    connectionStatus: 'disconnected',
+                    connectionError: null,
+                    apiProvider: null,
+                    machineSnapshotConnection: null,
+                    scaleSnapshotConnection: null,
+                    shotSettingsConnection: null,
+                    waterLevelsConnection: null,
+                    // Reset legacy state for compatibility
+                    wsState: WebSocketState.Closed
+                });
+                
+                // Reset properties and remote state
+                setProperties(getDefaultProperties());
+                setRemoteState(getDefaultRemoteState());
+            } else {
+                // Legacy disconnect
+                ctrl?.discard();
+                ctrl = undefined;
+                
+                // Reset legacy state
+                set({
+                    wsState: WebSocketState.Closed
+                });
+                
+                setProperties(getDefaultProperties());
+                setRemoteState(getDefaultRemoteState());
+            }
         },
 
         profiles: [],
@@ -713,65 +760,6 @@ export const useDataStore = create<DataStore>((set, get) => {
                     connectionError: 'No previous connection URL available',
                     r1LastConnectionError: 'No previous connection URL available' 
                 });
-            }
-        },
-        
-        // Enhanced disconnect method with improved cleanup
-        async disconnect() {
-            // Clear any reconnect timer
-            if (reconnectTimer) {
-                clearTimeout(reconnectTimer);
-                reconnectTimer = null;
-            }
-            
-            if (get().isUsingR1Api()) {
-                const { 
-                    apiProvider,
-                    machineSnapshotConnection,
-                    scaleSnapshotConnection,
-                    shotSettingsConnection,
-                    waterLevelsConnection 
-                } = get();
-                
-                // Close all WebSocket connections
-                machineSnapshotConnection?.close();
-                scaleSnapshotConnection?.close();
-                shotSettingsConnection?.close();
-                waterLevelsConnection?.close();
-                
-                // Close all connections if using R1WebSocketAdapter
-                if (apiProvider && 'closeAll' in apiProvider.websocket) {
-                    (apiProvider.websocket as any).closeAll();
-                }
-                
-                // Reset connection state
-                set({
-                    connectionStatus: 'disconnected',
-                    connectionError: null,
-                    apiProvider: null,
-                    machineSnapshotConnection: null,
-                    scaleSnapshotConnection: null,
-                    shotSettingsConnection: null,
-                    waterLevelsConnection: null,
-                    // Reset legacy state for compatibility
-                    wsState: WebSocketState.Closed
-                });
-                
-                // Reset properties and remote state
-                setProperties(getDefaultProperties());
-                setRemoteState(getDefaultRemoteState());
-            } else {
-                // Legacy disconnect
-                ctrl?.discard();
-                ctrl = undefined;
-                
-                // Reset legacy state
-                set({
-                    wsState: WebSocketState.Closed
-                });
-                
-                setProperties(getDefaultProperties());
-                setRemoteState(getDefaultRemoteState());
             }
         },
         

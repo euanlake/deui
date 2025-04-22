@@ -34,6 +34,7 @@
     "zustand": "^4.3.7"
   },
   "devDependencies": {
+    "@babel/plugin-transform-react-jsx": "^7.25.9",
     "@emotion/babel-plugin": "^11.7.2",
     "@emotion/babel-plugin-jsx-pragmatic": "^0.1.5",
     "@types/jest": "^29.5.2",
