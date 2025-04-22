@@ -78,11 +78,11 @@ This document outlines the detailed steps needed to replace our current integrat
 
 ## Server-Side Removal
 
-- [ ] **Remove Redundant Server Dependencies**
-  - [ ] Remove `express` dependency
-  - [ ] Remove `ws` WebSocket server library
-  - [ ] Remove `@abandonware/noble` Bluetooth library
-  - [ ] Remove other backend-specific dependencies
+- [X] **Remove Redundant Server Dependencies**
+  - [X] Remove `express` dependency
+  - [X] Remove `ws` WebSocket server library
+  - [X] Remove `@abandonware/noble` Bluetooth library
+  - [X] Remove other backend-specific dependencies
   - _Prompt: "Remove all server-side dependencies that are no longer needed now that R1 handles the backend functionality. Update package.json to reflect these changes."_
 
 - [ ] **Remove Server-Side Code**
