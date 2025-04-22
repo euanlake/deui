@@ -8,6 +8,11 @@ import { MachineMode, StorageKey, Theme, ViewId } from '$/shared/types'
 import { produce } from 'immer'
 import { create } from 'zustand'
 
+// Define custom machine modes
+const CustomMachineMode = {
+    Server: 'Server' as const
+}
+
 export const viewLineup = [
     {
         id: ViewId.Settings,
@@ -31,7 +36,7 @@ export const machineModeLineup = [
     MachineMode.Steam,
     MachineMode.Flush,
     MachineMode.Water,
-    MachineMode.Server,
+    CustomMachineMode.Server,
 ]
 
 interface UiStore {
@@ -45,9 +50,9 @@ interface UiStore {
 
     setView: (instruction: 'next' | 'prev' | ViewId) => void
 
-    machineMode: MachineMode
+    machineMode: MachineMode | typeof CustomMachineMode.Server
 
-    setMachineMode: (machineMode: MachineMode) => void
+    setMachineMode: (machineMode: MachineMode | typeof CustomMachineMode.Server) => void
 }
 
 const initialTheme =
@@ -111,7 +116,7 @@ export const useUiStore = create<UiStore>((set) => {
             })
         },
 
-        machineMode: MachineMode.Server,
+        machineMode: CustomMachineMode.Server,
 
         setMachineMode(machineMode) {
             setState((next) => {

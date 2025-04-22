@@ -139,7 +139,7 @@ export default function Revolver() {
                     relative
                 `}
         >
-            <StatusIndicator value={machineMode === MachineMode.Server ? status : Status.None} />
+            <StatusIndicator value={String(machineMode) === 'Server' ? status : Status.None} />
             <div
                 css={tw`
                         absolute

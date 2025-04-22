@@ -77,7 +77,20 @@ export function useCurrentTime() {
 
 export function useMetrics({ verticalLayout }: { verticalLayout?: boolean } = {}) {
     const { machineMode } = useUiStore()
-    return [...(verticalLayout ? VerticalMetrics : Metrics)[machineMode]]
+    const metricsMap = verticalLayout ? VerticalMetrics : Metrics
+    
+    // Check if the machineMode exists in the metrics map
+    // If not, default to Espresso mode metrics or return an empty array
+    if (!metricsMap[machineMode as keyof typeof metricsMap]) {
+        // Return an empty array when in Server mode
+        if (String(machineMode) === 'Server') {
+            return []
+        }
+        // Default to Espresso metrics for unknown modes
+        return [...metricsMap[MachineMode.Espresso]]
+    }
+    
+    return [...metricsMap[machineMode as keyof typeof metricsMap]]
 }
 
 export function useServerUrl({ 
