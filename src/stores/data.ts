@@ -17,7 +17,7 @@ import {
 } from '$/shared/types'
 import wsStream, { WsController } from '$/utils/wsStream'
 import { produce } from 'immer'
-import { MutableRefObject, useEffect, useMemo, useRef } from 'react'
+import { MutableRefObject, useEffect, useMemo, useRef, useCallback } from 'react'
 import { create } from 'zustand'
 import { Buffer } from 'buffer'
 import { decodeShotFrame, decodeShotHeader } from '$/utils/shot'
@@ -979,12 +979,11 @@ function clearReffedTimeoutId(ref: MutableRefObject<number | undefined>) {
 
 export function useAutoConnectEffect() {
     const { 
-        connect, disconnect, isUsingR1Api, connectToApi, 
-        r1ConnectionSettings, updateR1ConnectionSettings
+        disconnect, connectToApi, 
+        r1ConnectionSettings
     } = useDataStore();
     const { machineMode, setMachineMode } = useUiStore();
     const machineModeRef = useRef(machineMode);
-    const shouldUseR1Api = useShouldUseR1Api();
     const isR1Available = useR1Availability();
 
     if (machineModeRef.current !== machineMode) {
@@ -994,66 +993,43 @@ export function useAutoConnectEffect() {
     const timeoutIdRef = useRef<number | undefined>(undefined);
     useEffect(() => void clearReffedTimeoutId(timeoutIdRef), [machineMode]);
     
-    // Get server URL with appropriate protocol
-    const legacyUrl = useServerUrl({ protocol: 'ws' });
+    // Get R1 server URL with appropriate protocol
     const r1Url = useServerUrl({ 
         protocol: r1ConnectionSettings.useSecureProtocol ? 'https' : 'http'
     });
+
+    // Create a ref to track connection status to prevent multiple tab changes
+    const connectionStatusRef = useRef<string>('disconnected');
+
+    // Function to switch to Espresso tab after connection
+    const switchToEspressoTab = useCallback(() => {
+        if (machineModeRef.current === ('Server' as any)) {
+            console.log('Switching from Server to Espresso tab after connection established');
+            clearReffedTimeoutId(timeoutIdRef);
+            timeoutIdRef.current = window.setTimeout(() => {
+                setMachineMode(MachineMode.Espresso);
+            }, 500); // Use a shorter timeout for more responsive UI
+        }
+    }, [setMachineMode, timeoutIdRef, machineModeRef]);
 
     useEffect(() => {
         let mounted = true;
 
         void (async () => {
-            let attempts = 0;
-            let reachedReadyness = false;
+            if (!mounted) return;
 
-            // Make a single connection attempt
-            const attemptConnection = async () => {
-                if (!mounted) return;
-
-                try {
-                    // Use R1 API if available and enabled
-                    if (shouldUseR1Api && isR1Available) {
-                        await connectToApi(r1Url);
-                    } else {
-                        // Use legacy connection method
-                        await connect(legacyUrl, {
-                            onDeviceReady() {
-                                reachedReadyness = true;
-                                clearReffedTimeoutId(timeoutIdRef);
-
-                                timeoutIdRef.current = window.setTimeout(() => {
-                                    if (mounted && machineModeRef.current === ('Server' as any)) {
-                                        setMachineMode(MachineMode.Espresso);
-                                    }
-                                }, 2000);
-                            }
-                        });
-                    }
-
-                    attempts = 0;
-                } catch (e) {
-                    console.warn('Connect failed', e);
-                    attempts = Math.min(40, attempts + 1);
-                } finally {
-                    if (reachedReadyness) {
-                        setMachineMode('Server' as any);
-                    }
-
-                    reachedReadyness = false;
-                    clearReffedTimeoutId(timeoutIdRef);
-                }
-            };
-
-            // Make initial connection attempt
-            await attemptConnection();
-            
-            // If using legacy connection, continue with the reconnection loop
-            if (!shouldUseR1Api) {
-                while (mounted) {
-                    await sleep(attempts * 250);
-                    await attemptConnection();
-                }
+            try {
+                // Connect using R1 API
+                await connectToApi(r1Url);
+                
+                // Track the connection status
+                connectionStatusRef.current = 'connected';
+                
+                // Switch to Espresso tab immediately after connection
+                switchToEspressoTab();
+            } catch (e) {
+                console.warn('R1 API connection failed', e);
+                connectionStatusRef.current = 'disconnected';
             }
         })();
 
@@ -1063,8 +1039,8 @@ export function useAutoConnectEffect() {
             disconnect();
         };
     }, [
-        disconnect, connect, connectToApi, setMachineMode, 
-        legacyUrl, r1Url, shouldUseR1Api, isR1Available
+        disconnect, connectToApi, setMachineMode, 
+        r1Url, isR1Available, switchToEspressoTab
     ]);
 }
 
