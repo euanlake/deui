@@ -100,6 +100,9 @@ interface DataStore {
     updateR1ConnectionSettings: (settings: Partial<DataStore['r1ConnectionSettings']>) => void;
     pauseR1AutoReconnect: () => void;
     resumeR1AutoReconnect: () => void;
+    
+    // New function to load profiles from files
+    loadProfilesFromFiles: () => void;
 }
 
 function getDefaultProperties(): Properties {
@@ -531,16 +534,82 @@ export const useDataStore = create<DataStore>((set, get) => {
 
         profiles: [],
 
-        fetchProfiles(url) {
-            void (async () => {
-                try {
-                    set({
-                        profiles: z.array(Profile).parse((await axios.get(url)).data),
-                    })
-                } catch (e) {
-                    console.warn('Failed to fetch or parse profiles', e)
-                }
-            })()
+        // Replace the old fetchProfiles with loadProfilesFromFiles
+        async loadProfilesFromFiles() {
+            try {
+                console.log('Starting to load profiles from files');
+                // Use the fetch API to get a list of all profiles from the public/profiles folder
+                const profileFileList = await fetch('/profiles-list.json')
+                    .then(response => {
+                        console.log('Profiles list response:', response.status, response.statusText);
+                        if (!response.ok) {
+                            console.log('Falling back to directory listing');
+                            // If profiles-list.json doesn't exist, get the list directly
+                            return fetch('/profiles/')
+                                .then(res => {
+                                    console.log('Directory listing response:', res.status, res.statusText);
+                                    return res.text();
+                                })
+                                .then(html => {
+                                    // Extract filenames from directory listing
+                                    const regex = /href="([^"]+\.json)"/g;
+                                    const matches = [...html.matchAll(regex)];
+                                    const filenames = matches.map(match => match[1]);
+                                    console.log('Extracted filenames from directory listing:', filenames.length, filenames.slice(0, 5));
+                                    return filenames;
+                                });
+                        }
+                        return response.json();
+                    });
+
+                console.log('Profile file list obtained:', Array.isArray(profileFileList), profileFileList ? profileFileList.length : 0);
+                
+                // Fetch each profile file and parse it
+                const profiles = await Promise.all(
+                    (Array.isArray(profileFileList) ? profileFileList : [])
+                        .map(async (filename) => {
+                            try {
+                                console.log(`Loading profile: ${filename}`);
+                                const profileData = await fetch(`/profiles/${filename}`)
+                                    .then(res => {
+                                        if (!res.ok) {
+                                            console.error(`Failed to fetch profile ${filename}:`, res.status, res.statusText);
+                                            return null;
+                                        }
+                                        return res.json();
+                                    });
+                                
+                                if (!profileData) return null;
+                                
+                                // Extract the ID from the filename (without .json)
+                                const id = filename.replace('.json', '');
+                                
+                                return {
+                                    id,
+                                    title: profileData.title || id,
+                                    ...profileData
+                                };
+                            } catch (error) {
+                                console.error(`Error loading profile ${filename}:`, error);
+                                return null;
+                            }
+                        })
+                );
+
+                // Filter out any failed loads and update the store
+                const validProfiles = profiles.filter(p => p !== null);
+                
+                console.log(`Successfully loaded ${validProfiles.length} profiles`, validProfiles.map(p => p.id).slice(0, 5));
+                
+                set({ profiles: validProfiles });
+            } catch (error) {
+                console.error('Error loading profiles from files:', error);
+            }
+        },
+
+        // Keep the old fetchProfiles for compatibility, but make it call loadProfilesFromFiles
+        fetchProfiles() {
+            get().loadProfilesFromFiles();
         },
 
         // R1 API State
