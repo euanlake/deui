@@ -141,14 +141,21 @@ export const useDataStore = create<DataStore>((set, get) => {
             ...waterLevelsToProperties(waterLevels)
         };
         
-        // Update properties
+        // Ensure we have a timestamp for UI updates
+        if (!newProperties[Prop.ShotSampleTime]) {
+            newProperties[Prop.ShotSampleTime] = Date.now();
+        }
+        
+        // Update properties immediately
         if (Object.keys(newProperties).length > 0) {
+            console.log('Syncing properties from R1 state:', newProperties);
             setProperties(newProperties as Properties);
         }
         
         // Update remote state based on connection status
         const newRemoteState = connectionStatusToRemoteState(connectionStatus);
         if (Object.keys(newRemoteState).length > 0) {
+            console.log('Syncing remote state from connection status:', newRemoteState);
             setRemoteState(newRemoteState as RemoteState);
         }
     };
@@ -604,9 +611,14 @@ export const useDataStore = create<DataStore>((set, get) => {
                         // Call the handler to update state
                         onData(newData);
                         
-                        // Trigger legacy state sync after data update
+                        // Trigger legacy state sync immediately after data update
+                        // This ensures UI components re-render with new data
                         setTimeout(() => {
-                            get().syncR1StateToLegacyState();
+                            const stateStore = get();
+                            stateStore.syncR1StateToLegacyState();
+                            
+                            // Log that data was synchronized
+                            console.log(`${connectionName} data synced to UI`);
                         }, 0);
                     });
                     
@@ -980,7 +992,8 @@ function clearReffedTimeoutId(ref: MutableRefObject<number | undefined>) {
 export function useAutoConnectEffect() {
     const { 
         disconnect, connectToApi, 
-        r1ConnectionSettings, connectionStatus
+        r1ConnectionSettings, connectionStatus,
+        fetchMachineState, isUsingR1Api
     } = useDataStore();
     const { machineMode, setMachineMode } = useUiStore();
     const machineModeRef = useRef(machineMode);
@@ -1012,17 +1025,42 @@ export function useAutoConnectEffect() {
         }
     }, [setMachineMode, timeoutIdRef, machineModeRef]);
 
-    // Effect to monitor connection status changes and switch tabs only when connected
+    // Function to handle initial data fetching when connected
+    const refreshDataOnConnect = useCallback(async () => {
+        try {
+            console.log('Connection established, fetching fresh machine data');
+            
+            // Fetch fresh machine state to update UI
+            await fetchMachineState();
+            
+            // Force state synchronization
+            if (isUsingR1Api()) {
+                console.log('Syncing R1 state to legacy state');
+                useDataStore.getState().syncR1StateToLegacyState();
+            }
+            
+            console.log('Machine data refresh completed');
+        } catch (error) {
+            console.error('Error refreshing machine data:', error);
+        }
+    }, [fetchMachineState, isUsingR1Api]);
+
+    // Effect to monitor connection status changes and update UI when connected
     useEffect(() => {
-        // Only trigger tab switch when we transition from a non-connected to connected state
+        // Only trigger actions when we transition from a non-connected to connected state
         if (connectionStatus === 'connected' && prevConnectionStatusRef.current !== 'connected') {
-            console.log('Connection established, checking if tab switch is needed');
+            console.log('Connection established, updating UI');
+            
+            // First refresh the data to ensure we have the latest values
+            refreshDataOnConnect();
+            
+            // Then switch tabs if needed
             switchToEspressoTab();
         }
         
         // Update previous status reference
         prevConnectionStatusRef.current = connectionStatus;
-    }, [connectionStatus, switchToEspressoTab]);
+    }, [connectionStatus, switchToEspressoTab, refreshDataOnConnect]);
 
     // Effect to handle the initial connection attempt
     useEffect(() => {
