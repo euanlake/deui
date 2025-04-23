@@ -980,11 +980,14 @@ function clearReffedTimeoutId(ref: MutableRefObject<number | undefined>) {
 export function useAutoConnectEffect() {
     const { 
         disconnect, connectToApi, 
-        r1ConnectionSettings
+        r1ConnectionSettings, connectionStatus
     } = useDataStore();
     const { machineMode, setMachineMode } = useUiStore();
     const machineModeRef = useRef(machineMode);
     const isR1Available = useR1Availability();
+    
+    // Track previous connection status to detect actual connection events
+    const prevConnectionStatusRef = useRef(connectionStatus);
 
     if (machineModeRef.current !== machineMode) {
         machineModeRef.current = machineMode;
@@ -998,9 +1001,6 @@ export function useAutoConnectEffect() {
         protocol: r1ConnectionSettings.useSecureProtocol ? 'https' : 'http'
     });
 
-    // Create a ref to track connection status to prevent multiple tab changes
-    const connectionStatusRef = useRef<string>('disconnected');
-
     // Function to switch to Espresso tab after connection
     const switchToEspressoTab = useCallback(() => {
         if (machineModeRef.current === ('Server' as any)) {
@@ -1012,24 +1012,33 @@ export function useAutoConnectEffect() {
         }
     }, [setMachineMode, timeoutIdRef, machineModeRef]);
 
+    // Effect to monitor connection status changes and switch tabs only when connected
+    useEffect(() => {
+        // Only trigger tab switch when we transition from a non-connected to connected state
+        if (connectionStatus === 'connected' && prevConnectionStatusRef.current !== 'connected') {
+            console.log('Connection established, checking if tab switch is needed');
+            switchToEspressoTab();
+        }
+        
+        // Update previous status reference
+        prevConnectionStatusRef.current = connectionStatus;
+    }, [connectionStatus, switchToEspressoTab]);
+
+    // Effect to handle the initial connection attempt
     useEffect(() => {
         let mounted = true;
 
         void (async () => {
-            if (!mounted) return;
+            if (!mounted || !isR1Available) return;
 
             try {
                 // Connect using R1 API
                 await connectToApi(r1Url);
                 
-                // Track the connection status
-                connectionStatusRef.current = 'connected';
-                
-                // Switch to Espresso tab immediately after connection
-                switchToEspressoTab();
+                // Note: We don't need to manually switch the tab here anymore
+                // The connection status change effect will handle it
             } catch (e) {
                 console.warn('R1 API connection failed', e);
-                connectionStatusRef.current = 'disconnected';
             }
         })();
 
@@ -1039,8 +1048,8 @@ export function useAutoConnectEffect() {
             disconnect();
         };
     }, [
-        disconnect, connectToApi, setMachineMode, 
-        r1Url, isR1Available, switchToEspressoTab
+        disconnect, connectToApi, 
+        r1Url, isR1Available
     ]);
 }
 
