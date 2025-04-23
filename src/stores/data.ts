@@ -138,9 +138,9 @@ export const useDataStore = create<DataStore>((set, get) => {
         
         // Create properties object from R1 state
         const newProperties = {
-            ...machineStateToProperties(machineState),
-            ...scaleSnapshotToProperties(scaleSnapshot),
             ...shotSettingsToProperties(shotSettings),
+            ...scaleSnapshotToProperties(scaleSnapshot),
+            ...machineStateToProperties(machineState),
             ...waterLevelsToProperties(waterLevels)
         };
         

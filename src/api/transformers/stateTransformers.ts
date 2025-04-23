@@ -25,6 +25,7 @@ export function machineStateToProperties(machineState: MachineState | null): Par
     if (!machineState) return {}
     
     console.log('Raw machine snapshot data:', JSON.stringify(machineState))
+    console.log('targetGroupTemperature:', machineState.targetGroupTemperature)
     
     // Handle different machine state object structures
     let stateKey = '';
@@ -173,6 +174,9 @@ export function scaleSnapshotToProperties(scaleSnapshot: ScaleSnapshot | null): 
 
 export function shotSettingsToProperties(shotSettings: ShotSettings | null): Partial<Record<Prop, any>> {
     if (!shotSettings) return {}
+    
+    console.log('Shot settings data:', JSON.stringify(shotSettings))
+    console.log('groupTemp:', shotSettings.groupTemp)
     
     return {
         [Prop.TargetEspressoVol]: shotSettings.targetShotVolume || 0,
