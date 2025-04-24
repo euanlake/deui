@@ -103,6 +103,9 @@ interface DataStore {
     
     // New function to load profiles from files
     loadProfilesFromFiles: () => void;
+
+    // Scale functionality
+    getScales: () => Promise<Scale[]>
 }
 
 function getDefaultProperties(): Properties {
@@ -120,6 +123,13 @@ const majorToTimedPropMap: Partial<Record<MajorState, TimedProp>> = {
     [MajorState.Steam]: Prop.SteamTime,
     [MajorState.HotWater]: Prop.WaterTime,
     [MajorState.HotWaterRinse]: Prop.FlushTime,
+}
+
+// Initialize properties with default values for scale-related properties
+const initialProperties: Properties = {
+    [Prop.Weight]: 0,
+    [Prop.RecentEspressoMaxWeight]: 0,
+    // Add other default properties here...
 }
 
 export const useDataStore = create<DataStore>((set, get) => {
@@ -335,6 +345,50 @@ export const useDataStore = create<DataStore>((set, get) => {
 
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     
+    // Scale data handling
+    let selectedScale: Scale | null = null
+    let scaleSnapshot: ScaleSnapshot | null = null
+
+    async function handleScaleData(scaleApi: ScaleApi, webSocketApi: WebSocketApi) {
+        try {
+            // Get the initial scale if available
+            selectedScale = await scaleApi.getSelectedScale()
+            set({ selectedScale })
+
+            // Setup scale snapshot subscription
+            const scaleConnection = webSocketApi.connectToScaleSnapshot()
+            
+            scaleConnection.onMessage((data) => {
+                const snapshot = data as ScaleSnapshot
+                scaleSnapshot = snapshot
+                
+                // Update weight property
+                set(state => ({
+                    properties: {
+                        ...state.properties,
+                        [Prop.Weight]: snapshot.weight
+                    }
+                }))
+                
+                // When a shot completes, capture the final weight as max weight
+                const minorState = get().minorState
+                if (minorState !== MinorState.Pour && minorState !== MinorState.PreInfuse) {
+                    set(state => ({
+                        properties: {
+                            ...state.properties,
+                            [Prop.RecentEspressoMaxWeight]: snapshot.weight
+                        }
+                    }))
+                }
+            })
+        } catch (error) {
+            console.error('Failed to set up scale data handling:', error)
+        }
+    }
+
+    // Initialize properties
+    set({ properties: initialProperties })
+
     return {
         wsState: WebSocketState.Closed,
         remoteState: getDefaultRemoteState(),
@@ -618,8 +672,8 @@ export const useDataStore = create<DataStore>((set, get) => {
         connectionError: null,
         devices: [],
         machineState: null,
-        selectedScale: null,
-        scaleSnapshot: null,
+        selectedScale,
+        scaleSnapshot,
         shotSettings: null,
         waterLevels: null,
         machineSnapshotConnection: null,
@@ -875,8 +929,29 @@ export const useDataStore = create<DataStore>((set, get) => {
             if (!apiProvider) return
             
             try {
-                await apiProvider.device.scanForDevices()
+                console.log('Scanning for devices...')
+                
+                // Trigger the device scan endpoint directly
+                try {
+                    // First try the device adapter's method
+                    await apiProvider.device.scanForDevices()
+                } catch (err) {
+                    console.warn('Device adapter scan failed, using direct API call:', err)
+                    // Fall back to direct API call
+                    await axios.get(`${apiProvider.baseUrl || ''}/api/v1/devices/scan`, {
+                        timeout: 10000 // 10 second timeout
+                    })
+                }
+                
+                // Wait a bit for the scan to complete (scanning can take time)
+                console.log('Waiting for scan to complete...')
+                await new Promise(resolve => setTimeout(resolve, 3000))
+                
+                // Fetch updated device list
+                console.log('Fetching updated device list...')
                 await get().fetchDevices()
+                
+                console.log('Device scan completed')
             } catch (error) {
                 console.error('Error scanning for devices:', error)
             }
@@ -944,17 +1019,20 @@ export const useDataStore = create<DataStore>((set, get) => {
         },
         
         // R1 API Scale methods
-        async selectScale(scaleId) {
-            const { apiProvider } = get()
-            if (!apiProvider) return
-            
-            try {
-                await apiProvider.scale.selectScale(scaleId)
-                const selectedScale = await apiProvider.scale.getSelectedScale()
-                set({ selectedScale })
-            } catch (error) {
-                console.error('Error selecting scale:', error)
+        async selectScale(scaleId: string) {
+            const { apiProvider } = get();
+            if (!apiProvider) {
+                throw new Error('API Provider not available');
             }
+            
+            console.log(`Attempting to select scale with ID: ${scaleId}`);
+            await apiProvider.scale.selectScale(scaleId);
+            
+            // Update the selected scale in the store
+            console.log('Fetching updated selected scale...');
+            const updatedScale = await apiProvider.scale.getSelectedScale();
+            console.log('Updated selected scale state:', updatedScale);
+            set({ selectedScale: updatedScale });
         },
         
         async tareScale() {
@@ -1015,6 +1093,26 @@ export const useDataStore = create<DataStore>((set, get) => {
             // If we're disconnected, try to reconnect immediately
             if (get().connectionStatus === 'disconnected' || get().connectionStatus === 'error') {
                 get().reconnect();
+            }
+        },
+
+        // Scale functionality
+        getScales: async function() {
+            const { apiProvider } = get();
+            if (!apiProvider) {
+                console.warn('getScales called before apiProvider is initialized');
+                return [];
+            }
+            
+            try {
+                console.log('DataStore: Calling apiProvider.scale.getScales');
+                // First try the adapter's getScales method directly
+                const scales = await apiProvider.scale.getScales();
+                console.log('DataStore: Received scales from adapter:', scales);
+                return scales;
+            } catch (error) {
+                console.error('DataStore: Failed to get scales via apiProvider:', error);
+                return [];
             }
         },
     }

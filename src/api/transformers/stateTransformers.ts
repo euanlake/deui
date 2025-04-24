@@ -29,60 +29,83 @@ export function machineStateToProperties(machineState: MachineState | null): Par
     
     // Handle different machine state object structures
     let stateKey = '';
+    let mainState = '';
+    let subState = '';
     
     // Handle both string and object state formats
     if (machineState.state) {
         if (typeof machineState.state === 'string') {
             // Simple state string
+            mainState = machineState.state;
             stateKey = machineState.state;
             
             // Add substate if available
             if (machineState.substate) {
+                subState = machineState.substate;
                 stateKey = `${machineState.state}.${machineState.substate}`;
             }
         } else if (typeof machineState.state === 'object' && machineState.state !== null) {
-            // Complex state object with nested state properties
+            // Complex state object with nested state properties - R1 API format
             const stateObj = machineState.state as any;
             if (stateObj.state) {
+                mainState = stateObj.state;
                 stateKey = stateObj.state;
                 
                 // Add substate if available
                 if (stateObj.substate) {
+                    subState = stateObj.substate;
                     stateKey = `${stateObj.state}.${stateObj.substate}`;
                 }
             }
         }
     }
     
+    console.log('Parsed state:', mainState, 'Substate:', subState, 'Full state key:', stateKey);
+    
     // Map R1 API machine state to appropriate MajorState/MinorState
     // This is critical for both UI displays and the power button functionality
     let majorState = MajorState.Sleep; // Default to Sleep
     let minorState = MinorState.NoState;
     
-    if (stateKey.includes('idle') || stateKey === 'idle') {
+    // First determine major state based on the main state
+    if (mainState.includes('idle') || mainState === 'idle') {
         // If the state contains "idle", map to MajorState.Idle instead of Sleep
         // This ensures the power button shows as "On" (green) when the machine is idle
         majorState = MajorState.Idle;
-        minorState = MinorState.NoState;
-    } else {
-        // Use the mapping table for other states
-        const mapping = machineStateMap[stateKey];
-        if (mapping) {
-            majorState = mapping.major;
-            minorState = mapping.minor;
-        } else if (stateKey.includes('espresso')) {
-            majorState = MajorState.Espresso;
-            minorState = MinorState.NoState;
-        } else if (stateKey.includes('steam')) {
-            majorState = MajorState.Steam;
-            minorState = MinorState.NoState;
-        } else if (stateKey.includes('water')) {
-            majorState = MajorState.HotWater;
-            minorState = MinorState.NoState;
-        } else if (stateKey.includes('sleeping') || stateKey === 'sleeping') {
-            majorState = MajorState.Sleep;
-            minorState = MinorState.NoState;
+    } else if (mainState.includes('espresso')) {
+        majorState = MajorState.Espresso;
+    } else if (mainState.includes('steam')) {
+        majorState = MajorState.Steam;
+    } else if (mainState.includes('water')) {
+        majorState = MajorState.HotWater;
+    } else if (mainState.includes('flush')) {
+        majorState = MajorState.HotWaterRinse;
+    } else if (mainState.includes('sleeping') || mainState === 'sleeping') {
+        majorState = MajorState.Sleep;
+    }
+    
+    // Then determine minor state based on the substate
+    if (subState) {
+        if (subState === 'pouring') {
+            minorState = MinorState.Pour;
+        } else if (subState === 'preinfuse') {
+            minorState = MinorState.PreInfuse;
+        } else if (subState === 'heating' || subState.includes('warming')) {
+            minorState = MinorState.HeatWaterTank;
+        } else if (subState === 'stabilizing') {
+            minorState = MinorState.StabilizeMixTemp;
+        } else if (subState === 'steaming') {
+            minorState = MinorState.Steaming;
+        } else if (subState === 'flushing') {
+            minorState = MinorState.Flush;
         }
+    }
+    
+    // Also check the mapping table for specific state combinations
+    const mapping = machineStateMap[stateKey];
+    if (mapping) {
+        majorState = mapping.major;
+        minorState = mapping.minor;
     }
     
     // Determine if we're in a state where we should display flow/pressure

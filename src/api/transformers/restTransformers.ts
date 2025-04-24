@@ -42,11 +42,18 @@ export function transformR1MachineStateToMachineState(r1Data: any): MachineState
  * Transform R1 scale data to our application's Scale format
  */
 export function transformR1ScaleToScale(r1Scale: any): Scale {
+  console.log('Transforming R1 scale data:', r1Scale);
+  
+  // Ensure we correctly map the "state" from API to "connectionState" in our model
+  const connectionState = r1Scale.state === 'connected' ? 'connected' : 'disconnected';
+  
+  console.log(`Scale ${r1Scale.name} connection state: ${connectionState}`);
+  
   return {
     id: r1Scale.id,
     name: r1Scale.name,
     batteryLevel: r1Scale.batteryLevel || 0,
-    connectionState: r1Scale.state === 'connected' ? 'connected' : 'disconnected',
+    connectionState,
     type: 'scale'
   };
 }

@@ -63,11 +63,11 @@ This document outlines the detailed steps needed to replace our current integrat
 
 ## Adding New R1-Specific Functionality
 
-- [ ] **Implement Scale Support**
-  - [ ] Add UI components for scale operations
-  - [ ] Implement tare functionality
-  - [ ] Create real-time weight display using WebSocket data
-  - [ ] Support multiple scale types (Felicita Arc, Decent Scale, Bookoo)
+- [X] **Implement Scale Support**
+  - [X] Add UI components for scale operations
+  - [X] Implement tare functionality
+  - [X] Create real-time weight display using WebSocket data
+  - [X] Support multiple scale types (Felicita Arc, Decent Scale, Bookoo)
   - _Prompt: "Implement scale support using R1's scale API. Create UI components for scale operations and real-time weight display, supporting all compatible scale types."_
 
 - [X] **Enhance Profile Management**
