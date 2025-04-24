@@ -126,9 +126,9 @@ export default function Controller() {
                             h-full
                             items-center
                             grid
-                            grid-cols-5
-                            gap-8
-                            px-10
+                            grid-cols-6
+                            gap-6
+                            px-8
 
                             [> *]:-translate-y-1.5
                         `}
