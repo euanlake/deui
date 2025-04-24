@@ -203,10 +203,17 @@ export const useDataStore = create<DataStore>((set, get) => {
                         })
                     }
 
-                    if (majorState !== MajorState.Espresso || minorState !== MinorState.Pour) {
+                    // Define the active espresso substates where metrics should be tracked/displayed
+                    const activeEspressoSubstates = [MinorState.PreInfuse, MinorState.Pour];
+
+                    const isMaxTrackingState = majorState === MajorState.Espresso && 
+                                             typeof minorState !== 'undefined' &&
+                                             activeEspressoSubstates.includes(minorState);
+
+                    if (!isMaxTrackingState) {
                         /**
-                         * We only collect recent extremes for Espresso+Pour. Ignore
-                         * everything else.
+                         * We only collect recent extremes for Espresso during active pour/preinfuse.
+                         * Ignore everything else.
                          */
                         return
                     }
@@ -236,16 +243,21 @@ export const useDataStore = create<DataStore>((set, get) => {
                         [Prop.ShotGroupPressure]: pressure,
                         [Prop.ShotGroupFlow]: flow,
                         [Prop.MinorState]: minorState,
+                        [Prop.MajorState]: majorState,
                     } = next.properties
 
-                    const isPour = minorState === MinorState.Pour
+                    // Define the active espresso substates where metrics should be tracked/displayed
+                    const activeEspressoSubstates = [MinorState.PreInfuse, MinorState.Pour];
+                    const isDisplayState = majorState === MajorState.Espresso && 
+                                           typeof minorState !== 'undefined' &&
+                                           activeEspressoSubstates.includes(minorState);
 
                     if (typeof flow !== 'undefined') {
-                        next.properties[Prop.Flow] = isPour ? flow : 0
+                        next.properties[Prop.Flow] = isDisplayState ? flow : 0
                     }
 
                     if (typeof pressure !== 'undefined') {
-                        next.properties[Prop.Pressure] = isPour ? pressure : 0
+                        next.properties[Prop.Pressure] = isDisplayState ? pressure : 0
                     }
                 })()
             })
