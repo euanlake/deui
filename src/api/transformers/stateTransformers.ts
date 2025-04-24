@@ -190,9 +190,10 @@ export function scaleSnapshotToProperties(scaleSnapshot: ScaleSnapshot | null): 
     
     console.log('Scale snapshot data:', scaleSnapshot);
     
-    // Currently, there is no direct weight property in the Prop enum
-    // This is a placeholder for future implementation
-    return {}
+    // Map the scale weight to the legacy Prop.Weight property
+    return {
+        [Prop.Weight]: scaleSnapshot.weight || 0
+    }
 }
 
 export function shotSettingsToProperties(shotSettings: ShotSettings | null): Partial<Record<Prop, any>> {
