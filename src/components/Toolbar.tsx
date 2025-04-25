@@ -18,7 +18,7 @@ export default function Toolbar({ children, ...props }: HTMLAttributes<HTMLDivEl
                 {...props}
                 css={[
                     css`
-                        grid-template-columns: 2fr 1fr 2fr;
+                        grid-template-columns: 1fr 1fr 1fr 1fr;
                         gap: 1px;
                     `,
                     tw`

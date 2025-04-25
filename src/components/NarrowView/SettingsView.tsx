@@ -6,7 +6,6 @@ import { mlToL } from '$/utils'
 import WaterBar from '$/components/ui/WaterBar'
 import PowerToggle from '$/components/ui/PowerToggle'
 import BackendAddressControl from '$/components/controls/BackendAddressControl'
-import ScaleControl from '$/components/controls/ScaleControl'
 import { useDataStore } from '$/stores/data'
 import { Prop } from '$/shared/types'
 
@@ -26,7 +25,6 @@ export default function SettingsView() {
             >
                 <WaterBar />
             </Control>
-            <ScaleControl pad fill />
             <ThemeControl pad fill />
             <Control label="Power" pad fill>
                 <PowerToggle />

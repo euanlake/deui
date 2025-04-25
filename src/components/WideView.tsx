@@ -2,24 +2,49 @@ import Clock from '$/components/ui/Clock'
 import Controller from '$/components/ui/Controller'
 import WaterBar from '$/components/ui/WaterBar'
 import { Layer } from '$/shared/types'
-import { useDataStore, useMajorState, useWaterLevel } from '$/stores/data'
+import { useDataStore, useMajorState, useWaterLevel, useScaleStatus } from '$/stores/data'
 import { Prop } from '$/shared/types'
 import { mlToL } from '$/utils'
-import React, { HTMLAttributes, ReactNode } from 'react'
+import React, { HTMLAttributes, ReactNode, useState } from 'react'
 import { toaster } from 'toasterhea'
 import tw from 'twin.macro'
 import Toolbar from './Toolbar'
 import SettingsDrawer from './drawers/SettingsDrawer'
+import ScaleSelectDrawer from './drawers/ScaleSelectDrawer'
 import Button from './primitives/Button'
 import Label from './primitives/Label'
 import PowerToggle from './ui/PowerToggle'
+import StatusIndicator from './StatusIndicator'
 
 const settingsDrawer = toaster(SettingsDrawer, Layer.Drawer)
+const scaleSelectDrawer = toaster(ScaleSelectDrawer, Layer.Drawer)
 
 export default function WideView(props: HTMLAttributes<HTMLDivElement>) {
     const { [Prop.WaterCapacity]: waterCapacity = 0 } = useDataStore().properties
+    const { getScales, selectedScale, selectScale, scanForDevices } = useDataStore()
+    const [isScaleDrawerOpen, setIsScaleDrawerOpen] = useState(false)
+    const scaleStatus = useScaleStatus()
 
     const ready = true // typeof majorState !== 'undefined' && majorState !== MajorState.Sleep
+
+    const handleScaleSelection = async () => {
+        if (isScaleDrawerOpen) return
+        
+        setIsScaleDrawerOpen(true)
+        try {
+            await scaleSelectDrawer.pop({ 
+                scanFn: scanForDevices, 
+                fetchFn: getScales,
+                onSelect: async (scaleId: string) => {
+                    await selectScale(scaleId)
+                }
+            })
+        } catch (e) {
+            console.log('Scale selection drawer closed or rejected.')
+        } finally {
+            setIsScaleDrawerOpen(false)
+        }
+    }
 
     return (
         <div
@@ -66,6 +91,22 @@ export default function WideView(props: HTMLAttributes<HTMLDivElement>) {
                     }
                 >
                     <WaterBar />
+                </Pane>
+                <Pane title="Scale">
+                    <Button 
+                        onClick={handleScaleSelection}
+                        disabled={isScaleDrawerOpen}
+                    >
+                        <StatusIndicator 
+                            value={scaleStatus}
+                            css={tw`
+                                absolute
+                                right-2
+                                top-2
+                            `}
+                        />
+                        {selectedScale ? selectedScale.name : 'Connect'}
+                    </Button>
                 </Pane>
                 <Pane title="Settings">
                     <Button

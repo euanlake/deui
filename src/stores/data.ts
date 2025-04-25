@@ -1161,6 +1161,23 @@ export function useStatus() {
     return Status.Busy
 }
 
+export function useScaleStatus() {
+    const { selectedScale, isUsingR1Api } = useDataStore()
+    
+    // If there's no scale selected, return off status
+    if (!selectedScale) {
+        return Status.Off
+    }
+    
+    // If there is a scale and it's connected, return on status
+    if (selectedScale.connectionState === 'connected') {
+        return Status.On
+    }
+    
+    // If there is a scale but it's disconnected, return busy status
+    return Status.Busy
+}
+
 function clearReffedTimeoutId(ref: MutableRefObject<number | undefined>) {
     if (ref.current) {
         clearTimeout(ref.current)
