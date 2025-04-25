@@ -19,6 +19,7 @@ const App = () => {
     useAutoConnectEffect()
 
     // Load profiles from the public/profiles folder on app start
+    // This will also restore the last used profile from localStorage
     useEffect(() => {
         loadProfilesFromFiles();
     }, [loadProfilesFromFiles]);

@@ -668,6 +668,34 @@ export const useDataStore = create<DataStore>((set, get) => {
                 console.log(`Successfully loaded ${validProfiles.length} profiles`, validProfiles.map(p => p.id).slice(0, 5));
                 
                 set({ profiles: validProfiles });
+                
+                // After profiles are loaded, check if we have a saved profile in localStorage
+                try {
+                    const { StorageKey } = await import('$/shared/types');
+                    const savedProfileId = localStorage.getItem(StorageKey.LastUsedProfile);
+                    
+                    if (savedProfileId) {
+                        console.log(`Found saved profile ID: ${savedProfileId}, restoring it`);
+                        
+                        // Check if the saved profile exists in the loaded profiles
+                        const profileExists = validProfiles.some(p => p.id === savedProfileId);
+                        
+                        if (profileExists) {
+                            // Update the profileId in the remoteState
+                            set(state => ({
+                                remoteState: {
+                                    ...state.remoteState,
+                                    profileId: savedProfileId
+                                }
+                            }));
+                            console.log(`Successfully restored profile ${savedProfileId} from previous session`);
+                        } else {
+                            console.warn(`Saved profile ${savedProfileId} not found in loaded profiles`);
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error restoring saved profile:', e);
+                }
             } catch (error) {
                 console.error('Error loading profiles from files:', error);
             }

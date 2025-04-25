@@ -4,6 +4,7 @@ import { css } from '@emotion/react'
 import { useDataStore } from '$/stores/data'
 import axios from 'axios'
 import { useServerUrl } from '$/hooks'
+import { StorageKey } from '$/shared/types'
 
 export default function ProfilesView() {
     const {
@@ -71,6 +72,10 @@ export default function ProfilesView() {
                                 }
                             }));
                             console.log(`Updated profileId in store to: ${id}`);
+                            
+                            // Save to localStorage for persistence across sessions
+                            localStorage.setItem(StorageKey.LastUsedProfile, id);
+                            console.log(`Saved profile ${id} to localStorage for future sessions`);
                         } catch (error) {
                             console.error('Error sending profile to DE1:', error);
                         }
