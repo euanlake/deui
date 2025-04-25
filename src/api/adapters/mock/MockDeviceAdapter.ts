@@ -7,13 +7,13 @@ export class MockDeviceAdapter implements DeviceApi {
       id: 'mock-de1',
       name: 'Mock DE1',
       type: 'machine',
-      connected: true
+      connectionState: 'connected'
     },
     {
       id: 'mock-scale',
       name: 'Mock Decent Scale',
       type: 'scale',
-      connected: true
+      connectionState: 'connected'
     }
   ];
   
@@ -29,7 +29,7 @@ export class MockDeviceAdapter implements DeviceApi {
         id: 'mock-scale-2',
         name: 'Mock Felicita Arc Scale',
         type: 'scale',
-        connected: false
+        connectionState: 'disconnected'
       });
     }
   }

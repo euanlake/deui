@@ -5,13 +5,13 @@ export function transformR1DeviceToDevice(r1Device: any): Device {
     id: r1Device.id,
     name: r1Device.name,
     type: determineDeviceType(r1Device.name),
-    connected: r1Device.state === 'connected'
+    connectionState: r1Device.state === 'connected' ? 'connected' : 'disconnected'
   };
 }
 
-function determineDeviceType(name: string): string {
+function determineDeviceType(name: string): 'machine' | 'scale' {
   const lowerName = name.toLowerCase();
   if (lowerName.includes('de1')) return 'machine';
-  if (lowerName.includes('scale')) return 'scale';
-  return 'unknown';
+  // Default to scale for all other devices
+  return 'scale';
 } 

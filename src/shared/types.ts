@@ -25,6 +25,7 @@ export enum StorageKey {
     Theme = 'deui/theme',
     BackendUrl = 'deui/backendUrl',
     RecentMAC = 'deui/recentMAC',
+    LastUsedProfile = 'deui/lastUsedProfile',
 }
 
 export enum Theme {
@@ -352,6 +353,7 @@ export enum Prop {
     Pressure,
     Weight,
     RecentEspressoMaxWeight,
+    RecentEspressoTime,
 }
 
 export const RemoteProfile = z.object({
@@ -463,6 +465,7 @@ export enum MachineMode {
     Steam = 'Steam',
     Flush = 'Flush',
     Water = 'Water',
+    Server = 'Server',
 }
 
 export enum MajorState {

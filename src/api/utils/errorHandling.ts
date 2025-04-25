@@ -1,5 +1,10 @@
 import axios from 'axios';
-type AxiosError = axios.AxiosError;
+// Axios error type definition
+interface AxiosError extends Error {
+  response?: any;
+  request?: any;
+  config?: any;
+}
 
 /**
  * Error categories to help the application understand the context of errors

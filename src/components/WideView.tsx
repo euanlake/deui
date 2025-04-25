@@ -14,7 +14,7 @@ import ScaleSelectDrawer from './drawers/ScaleSelectDrawer'
 import Button from './primitives/Button'
 import Label from './primitives/Label'
 import PowerToggle from './ui/PowerToggle'
-import StatusIndicator from './StatusIndicator'
+import StatusIndicator, { Status } from './StatusIndicator'
 
 const settingsDrawer = toaster(SettingsDrawer, Layer.Drawer)
 const scaleSelectDrawer = toaster(ScaleSelectDrawer, Layer.Drawer)
@@ -24,6 +24,8 @@ export default function WideView(props: HTMLAttributes<HTMLDivElement>) {
     const { getScales, selectedScale, selectScale, scanForDevices } = useDataStore()
     const [isScaleDrawerOpen, setIsScaleDrawerOpen] = useState(false)
     const scaleStatus = useScaleStatus()
+    const [localScaleName, setLocalScaleName] = useState<string | null>(null)
+    const [localScaleStatus, setLocalScaleStatus] = useState<Status | null>(null)
 
     const ready = true // typeof majorState !== 'undefined' && majorState !== MajorState.Sleep
 
@@ -36,15 +38,40 @@ export default function WideView(props: HTMLAttributes<HTMLDivElement>) {
                 scanFn: scanForDevices, 
                 fetchFn: getScales,
                 onSelect: async (scaleId: string) => {
-                    await selectScale(scaleId)
+                    try {
+                        const scales = await getScales();
+                        const selectedScaleInfo = scales.find(s => s.id === scaleId);
+                        
+                        if (selectedScaleInfo) {
+                            setLocalScaleName(selectedScaleInfo.name);
+                            setLocalScaleStatus(Status.Busy);
+                        }
+                        
+                        await selectScale(scaleId);
+                        
+                        if (selectedScaleInfo) {
+                            setLocalScaleStatus(Status.On);
+                        }
+                    } catch (error) {
+                        console.error('Failed to select scale:', error);
+                        setLocalScaleName(null);
+                        setLocalScaleStatus(null);
+                    }
                 }
             })
         } catch (e) {
             console.log('Scale selection drawer closed or rejected.')
         } finally {
-            setIsScaleDrawerOpen(false)
+            setIsScaleDrawerOpen(false);
+            setTimeout(() => {
+                setLocalScaleName(null);
+                setLocalScaleStatus(null);
+            }, 500);
         }
     }
+
+    const displayScaleName = localScaleName || (selectedScale ? selectedScale.name : 'Connect');
+    const displayScaleStatus = localScaleStatus || scaleStatus;
 
     return (
         <div
@@ -98,14 +125,14 @@ export default function WideView(props: HTMLAttributes<HTMLDivElement>) {
                         disabled={isScaleDrawerOpen}
                     >
                         <StatusIndicator 
-                            value={scaleStatus}
+                            value={displayScaleStatus}
                             css={tw`
                                 absolute
                                 right-2
                                 top-2
                             `}
                         />
-                        {selectedScale ? selectedScale.name : 'Connect'}
+                        {displayScaleName}
                     </Button>
                 </Pane>
                 <Pane title="Settings">
