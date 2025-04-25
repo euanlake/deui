@@ -301,7 +301,7 @@ export const useDataStore = create<DataStore>((set, get) => {
             minorState === MinorState.Pour ? majorToTimedPropMap[majorState] : void 0
 
         const npnflushTimedProp =
-            minorState !== MinorState.Flush ? majorToTimedPropMap[majorState] : void 0
+            minorState !== MinorState.Flush ? majorToTimedPropMap[majorState ?? MajorState.Unknown] : void 0
 
         if (!pourTimedProp) {
             recentTimer?.stop()
@@ -730,97 +730,96 @@ export const useDataStore = create<DataStore>((set, get) => {
                 
                 // Setup WebSocket connections with proper error handling and reconnection
                 const setupWebsocket = (
-                    connectionMethod: () => WebSocketConnection,
+                    connectionMethod: () => any, // Use any temporarily to avoid type issues
                     connectionName: string,
                     onData: (data: any) => void
                 ) => {
-                    console.log(`Setting up ${connectionName} WebSocket connection`);
-                    const connection = connectionMethod();
-                    
-                    connection.onMessage((data) => {
-                        console.log(`${connectionName} data received:`, data);
+                    try {
+                        console.log(`Setting up ${connectionName} websocket connection`);
+                        const connection = connectionMethod();
                         
-                        // Force UI update with new reference by creating shallow copy
-                        const newData = {...data};
-                        
-                        // Call the handler to update state
-                        onData(newData);
-                        
-                        // Trigger legacy state sync immediately after data update
-                        // This ensures UI components re-render with new data
-                        setTimeout(() => {
-                            const stateStore = get();
-                            stateStore.syncR1StateToLegacyState();
+                        if (connection) {
+                            connection.onMessage(onData);
                             
-                            // Log that data was synchronized
-                            console.log(`${connectionName} data synced to UI`);
-                        }, 0);
-                    });
-                    
-                    connection.onError((error) => {
-                        console.error(`WebSocket error (${connectionName}):`, error);
-                        
-                        // Log error but don't change connection status as other connections may be working
-                        set(state => ({
-                            ...state,
-                            r1LastConnectionError: `${connectionName} error: ${error.message}`
-                        }));
-                    });
-                    
-                    connection.onClose(() => {
-                        console.log(`WebSocket closed (${connectionName})`);
-                        
-                        // Only try to reconnect the connection if we haven't already disconnected the whole API
-                        if (get().connectionStatus === 'connected' && get().apiProvider) {
-                            // Try to re-establish just this connection
-                            setTimeout(() => {
-                                console.log(`Attempting to reconnect ${connectionName} WebSocket...`);
-                                const newConnection = connectionMethod();
-                                // Update the specific connection in the store
-                                set({ 
-                                    [`${connectionName.replace(/\s+/g, '')}Connection`]: newConnection 
-                                } as any);
-                            }, 2000);
+                            connection.onError((error: Error) => {
+                                console.error(`${connectionName} websocket error:`, error);
+                            });
+                            
+                            connection.onClose(() => {
+                                console.log(`${connectionName} websocket closed`);
+                            });
                         }
-                    });
-                    
-                    return connection;
+                        
+                        return connection;
+                    } catch (error) {
+                        console.error(`Failed to setup ${connectionName} websocket:`, error);
+                        return null;
+                    }
                 };
                 
-                // Setup all WebSocket connections
-                const machineSnapshotConnection = setupWebsocket(
-                    () => apiProvider.websocket.connectToMachineSnapshot(),
-                    'machineSnapshot',
-                    (data) => {
-                        console.log('Updating machine state with:', data);
-                        set({ machineState: data });
-                    }
-                );
-                
-                const scaleSnapshotConnection = setupWebsocket(
-                    () => apiProvider.websocket.connectToScaleSnapshot(),
-                    'scaleSnapshot',
-                    (data) => set({ scaleSnapshot: data })
-                );
-                
-                const shotSettingsConnection = setupWebsocket(
-                    () => apiProvider.websocket.connectToShotSettings(),
-                    'shotSettings',
-                    (data) => set({ shotSettings: data })
-                );
-                
-                const waterLevelsConnection = setupWebsocket(
-                    () => apiProvider.websocket.connectToWaterLevels(),
-                    'waterLevels',
-                    (data) => set({ waterLevels: data })
-                );
+                // Setup WebSocket connections for real-time updates
+                try {
+                    // Machine snapshot
+                    const machineSnapshotConnection = setupWebsocket(
+                        () => apiProvider.websocket.connectToMachineSnapshot(),
+                        'machine snapshot',
+                        (data) => {
+                            set({ machineState: data });
+                            // Update Pressure and Flow in legacy properties
+                            setProperties({
+                                [Prop.Pressure]: data.pressure,
+                                [Prop.Flow]: data.flow
+                            });
+                        }
+                    );
+                    
+                    // Scale snapshot
+                    const scaleSnapshotConnection = setupWebsocket(
+                        () => apiProvider.websocket.connectToScaleSnapshot(),
+                        'scale snapshot',
+                        (data) => {
+                            set({ scaleSnapshot: data });
+                            // Update Weight in legacy properties
+                            setProperties({
+                                [Prop.Weight]: data.weight
+                            });
+                        }
+                    );
+                    
+                    // Shot settings
+                    const shotSettingsConnection = setupWebsocket(
+                        () => apiProvider.websocket.connectToShotSettings(),
+                        'shot settings',
+                        (data) => set({ shotSettings: data })
+                    );
+                    
+                    // Water levels
+                    const waterLevelsConnection = setupWebsocket(
+                        () => apiProvider.websocket.connectToWaterLevels(),
+                        'water levels',
+                        (data) => {
+                            set({ waterLevels: data });
+                            // Update water level in legacy properties
+                            setProperties({
+                                [Prop.WaterLevel]: data.currentPercentage / 100
+                            });
+                        }
+                    );
+                    
+                    // Update store with WebSocket connections
+                    set({ 
+                        machineSnapshotConnection,
+                        scaleSnapshotConnection, 
+                        shotSettingsConnection,
+                        waterLevelsConnection
+                    });
+                } catch (error) {
+                    console.error('Failed to set up WebSocket connections:', error);
+                    set({ connectionError: 'Failed to set up WebSocket connections' });
+                }
                 
                 // Update state with connections
                 set({
-                    machineSnapshotConnection,
-                    scaleSnapshotConnection,
-                    shotSettingsConnection,
-                    waterLevelsConnection,
                     connectionStatus: 'connected',
                     connectionError: null,
                     r1ConnectionAttempts: 0,
@@ -1002,7 +1001,15 @@ export const useDataStore = create<DataStore>((set, get) => {
             if (!apiProvider) return
             
             try {
-                await apiProvider.machine.uploadProfile(profile)
+                // Convert shared BeverageType to API format
+                const convertedProfile = {
+                    ...profile,
+                    beverage_type: profile.beverage_type === 'tea_portafilter' ? 'tea' : profile.beverage_type,
+                    // Ensure version is a string
+                    version: String(profile.version)
+                } as any; // Use type assertion to avoid complex type issues
+                
+                await apiProvider.machine.uploadProfile(convertedProfile)
             } catch (error) {
                 console.error('Error uploading profile:', error)
             }

@@ -33,7 +33,7 @@ export default function MetricsView() {
                             [MachineMode.Steam],
                             [MachineMode.Flush],
                             [MachineMode.Water],
-                            [MachineMode.Server],
+                            ["Server"],
                         ]}
                         value={machineMode}
                     />
