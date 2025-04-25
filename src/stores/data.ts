@@ -43,6 +43,8 @@ import {
     waterLevelsToProperties,
     connectionStatusToRemoteState
 } from '../api/transformers/stateTransformers'
+import { ScaleApi } from '../api/interfaces/ScaleApi'
+import { WebSocketApi } from '../api/interfaces/WebSocketApi'
 
 interface DataStore {
     // Legacy state
@@ -391,9 +393,9 @@ export const useDataStore = create<DataStore>((set, get) => {
             set({ selectedScale })
 
             // Setup scale snapshot subscription
-            const scaleConnection = webSocketApi.connectToScaleSnapshot()
+            const wsConnection = webSocketApi.connectToScaleSnapshot()
             
-            scaleConnection.onMessage((data) => {
+            wsConnection.onMessage((data) => {
                 const snapshot = data as ScaleSnapshot
                 scaleSnapshot = snapshot
                 
@@ -406,7 +408,8 @@ export const useDataStore = create<DataStore>((set, get) => {
                 }))
                 
                 // When a shot completes, capture the final weight as max weight
-                const minorState = get().minorState
+                const properties = get().properties;
+                const minorState = properties[Prop.MinorState] as MinorState;
                 if (minorState !== MinorState.Pour && minorState !== MinorState.PreInfuse) {
                     set(state => ({
                         properties: {
@@ -771,8 +774,11 @@ export const useDataStore = create<DataStore>((set, get) => {
                     await axios.get(`${url || fullUrl}/api/v1/devices`, { 
                         timeout: 5000 
                     });
-                } catch (healthCheckError) {
-                    throw new Error(`R1 server unreachable: ${healthCheckError.message}`);
+                } catch (healthCheckError: unknown) {
+                    const errorMessage = healthCheckError instanceof Error ? 
+                        healthCheckError.message : 
+                        'Unknown error connecting to R1 server';
+                    throw new Error(`R1 server unreachable: ${errorMessage}`);
                 }
 
                 // Fetch initial data
@@ -1047,9 +1053,17 @@ export const useDataStore = create<DataStore>((set, get) => {
             if (!apiProvider) return
             
             try {
-                await apiProvider.machine.uploadProfile(profile)
+                if (!apiProvider.machine) return;
+                // Convert version to string if needed
+                const fixedProfile = {
+                    ...profile,
+                    version: String(profile.version)
+                };
+                await apiProvider.machine.uploadProfile(fixedProfile);
+                // Refresh the profile list
+                get().fetchProfiles(apiProvider.machine as any);
             } catch (error) {
-                console.error('Error uploading profile:', error)
+                console.error('Failed to upload profile:', error);
             }
         },
         

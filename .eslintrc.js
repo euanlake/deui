@@ -19,6 +19,6 @@ module.exports = {
   },
   plugins: ["react", "@typescript-eslint"],
   rules: {
-    "react/no-unknown-property": ["error", { ignore: ["tw"] }]
+    "react/no-unknown-property": ["error", { ignore: ["tw", "css"] }]
   },
 };
