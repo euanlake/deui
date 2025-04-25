@@ -9,7 +9,7 @@ import SubstateSwitch from '../SubstateSwitch'
 import StatusIndicator, { Status } from '../StatusIndicator'
 
 interface ItemProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type'> {
-    mode: MachineMode
+    mode: MachineMode | "Server"
     active?: boolean
 }
 
@@ -65,7 +65,7 @@ const n = machineModeLineup.length
 
 const limit = 500
 
-function getMode(phase: number): MachineMode {
+function getMode(phase: number): MachineMode | "Server" {
     return machineModeLineup[((phase % n) + n) % n] || MachineMode.Espresso
 }
 

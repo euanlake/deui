@@ -318,7 +318,7 @@ export const useDataStore = create<DataStore>((set, get) => {
             majorToTimedPropMap[majorState] : void 0;
             
         const npnflushTimedProp =
-            minorState !== MinorState.Flush ? majorToTimedPropMap[majorState] : void 0;
+            minorState !== MinorState.Flush ? majorToTimedPropMap[majorState ?? MajorState.Unknown] : void 0
 
         if (!timedProp) {
             // If we're stopping an espresso timer, save the final shot time
@@ -787,7 +787,7 @@ export const useDataStore = create<DataStore>((set, get) => {
                 
                 // Setup WebSocket connections with proper error handling and reconnection
                 const setupWebsocket = (
-                    connectionMethod: () => WebSocketConnection,
+                    connectionMethod: () => any, // Use any temporarily to avoid type issues
                     connectionName: string,
                     onData: (data: any) => void
                 ) => {
@@ -810,31 +810,42 @@ export const useDataStore = create<DataStore>((set, get) => {
                     });
                     
                     connection.onError((error) => {
-                        console.error(`WebSocket error (${connectionName}):`, error);
-                        
-                        // Log error but don't change connection status as other connections may be working
-                        set(state => ({
-                            ...state,
-                            r1LastConnectionError: `${connectionName} error: ${error.message}`
-                        }));
-                    });
-                    
-                    connection.onClose(() => {
-                        console.log(`WebSocket closed (${connectionName})`);
-                        
-                        // Only try to reconnect the connection if we haven't already disconnected the whole API
-                        if (get().connectionStatus === 'connected' && get().apiProvider) {
-                            // Try to re-establish just this connection
-                            setTimeout(() => {
-                                console.log(`Attempting to reconnect ${connectionName} WebSocket...`);
-                                const newConnection = connectionMethod();
-                                // Update the specific connection in the store
-                                set({ 
-                                    [`${connectionName.replace(/\s+/g, '')}Connection`]: newConnection 
-                                } as any);
-                            }, 2000);
+                        console.error(`WebSocket error (${connectionName}):`, error);         
+                        return connection;
+                    } catch (error) {
+                        console.error(`Failed to setup ${connectionName} websocket:`, error);
+                        return null;
+                    }
+                };
+                
+                // Setup WebSocket connections for real-time updates
+                try {
+                    // Machine snapshot
+                    const machineSnapshotConnection = setupWebsocket(
+                        () => apiProvider.websocket.connectToMachineSnapshot(),
+                        'machine snapshot',
+                        (data) => {
+                            set({ machineState: data });
+                            // Update Pressure and Flow in legacy properties
+                            setProperties({
+                                [Prop.Pressure]: data.pressure,
+                                [Prop.Flow]: data.flow
+                            });
                         }
-                    });
+                    );
+                    
+                    // Scale snapshot
+                    const scaleSnapshotConnection = setupWebsocket(
+                        () => apiProvider.websocket.connectToScaleSnapshot(),
+                        'scale snapshot',
+                        (data) => {
+                            set({ scaleSnapshot: data });
+                            // Update Weight in legacy properties
+                            setProperties({
+                                [Prop.Weight]: data.weight
+                            });
+                        }
+                    );
                     
                     return connection;
                 };
@@ -868,10 +879,6 @@ export const useDataStore = create<DataStore>((set, get) => {
                 
                 // Update state with connections
                 set({
-                    machineSnapshotConnection,
-                    scaleSnapshotConnection,
-                    shotSettingsConnection,
-                    waterLevelsConnection,
                     connectionStatus: 'connected',
                     connectionError: null,
                     r1ConnectionAttempts: 0,
@@ -1053,6 +1060,7 @@ export const useDataStore = create<DataStore>((set, get) => {
             if (!apiProvider) return
             
             try {
+
                 if (!apiProvider.machine) return;
                 // Convert version to string if needed
                 const fixedProfile = {
@@ -1062,6 +1070,7 @@ export const useDataStore = create<DataStore>((set, get) => {
                 await apiProvider.machine.uploadProfile(fixedProfile);
                 // Refresh the profile list
                 get().fetchProfiles(apiProvider.machine as any);
+
             } catch (error) {
                 console.error('Failed to upload profile:', error);
             }
