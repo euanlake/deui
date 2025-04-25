@@ -1,7 +1,8 @@
 import React from 'react'
 import TextSwitch from '$/components/TextSwitch'
 import { ConnectionPhase } from '$/shared/types'
-import { useConnectionPhase, useMachineState } from '$/stores/data'
+import { useConnectionPhase, useMachineState, useStatus } from '$/stores/data'
+import { Status } from './StatusIndicator'
 import { useUiStore } from '$/stores/ui'
 import { useIsMachineModeActive } from '$/hooks'
 
@@ -20,6 +21,7 @@ export default function SubstateSwitch() {
     const machineState = useMachineState()
     const { machineMode } = useUiStore()
     const connPhase = useConnectionPhase()
+    const status = useStatus()
     const activeMode = useIsMachineModeActive()
     
     // Get the combined state key
@@ -29,7 +31,7 @@ export default function SubstateSwitch() {
     
     // Determine what value to show based on mode and connection
     const value = String(machineMode) === 'Server' 
-        ? connPhase 
+        ? (status === Status.On ? connPhase : undefined)
         : (activeMode ? stateKey : undefined)
 
     return (
