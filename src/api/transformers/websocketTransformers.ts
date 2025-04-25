@@ -5,14 +5,35 @@ import { ScaleSnapshot } from '../models/Scale';
  * Transform R1 machine snapshot data to our application's MachineState format
  */
 export function transformR1MachineSnapshotToMachineState(r1Data: any): MachineState {
-  // Add logging to debug the incoming data
-  console.log('Raw machine snapshot data:', JSON.stringify(r1Data));
+  // Handle state and substate normalization for different formats
+  let state = 'unknown';
+  let substate = 'unknown';
+  
+  // Extract state from the nested structure
+  if (r1Data.state) {
+    if (typeof r1Data.state === 'string') {
+      state = r1Data.state;
+    } else if (typeof r1Data.state === 'object' && r1Data.state !== null) {
+      state = r1Data.state.state || 'unknown';
+      substate = r1Data.state.substate || 'unknown';
+    }
+  }
+  
+  // If the substate comes directly in the root object
+  if (r1Data.substate && typeof r1Data.substate === 'string') {
+    substate = r1Data.substate;
+  }
+  
+  // Normalize preinfusion variants (API might use either spelling)
+  if (substate === 'preinfusion' || substate === 'preinfuse') {
+    substate = 'preinfusion'; // Ensure consistent mapping to our state model
+  }
   
   // Ensure proper type conversions and handle potential nulls
   return {
     timestamp: r1Data.timestamp || new Date().toISOString(),
-    state: r1Data.state?.state || 'unknown',
-    substate: r1Data.state?.substate || 'unknown',
+    state: state,
+    substate: substate,
     flow: Number(r1Data.flow || 0),
     pressure: Number(r1Data.pressure || 0),
     targetFlow: Number(r1Data.targetFlow || 0),
@@ -72,8 +93,6 @@ export function transformR1WebSocketData(
   endpoint: 'machine' | 'scale' | 'shotSettings' | 'waterLevels', 
   data: any
 ): any {
-  console.log(`Transforming ${endpoint} data:`, data);
-  
   switch (endpoint) {
     case 'machine':
       return transformR1MachineSnapshotToMachineState(data);

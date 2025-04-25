@@ -106,6 +106,11 @@ const propToMetricMap: Partial<
     [Prop.RecentEspressoMaxPressure]: { label: 'Max pressure', unit: '' },
     [Prop.RecentEspressoMaxFlow]: { label: 'Max flow', unit: '' },
     [Prop.RecentEspressoMaxWeight]: { label: 'Max weight', unit: '', formatFn: (v) => v.toFixed(1) },
+    [Prop.RecentEspressoTime]: { 
+        label: 'Shot time', 
+        unit: '', 
+        formatFn: (v) => v.toFixed(0) 
+    },
     [Prop.EspressoTime]: {
         label: 'Shot time',
         unit: '',
@@ -151,7 +156,7 @@ export const Metrics: Metrics = {
         (idle) => (idle ? Prop.RecentEspressoMaxPressure : Prop.Pressure),
         (idle) => (idle ? Prop.RecentEspressoMaxFlow : Prop.Flow),
         (idle) => (idle ? Prop.RecentEspressoMaxWeight : Prop.Weight),
-        Prop.EspressoTime,
+        (idle) => (idle ? Prop.RecentEspressoTime : Prop.EspressoTime),
     ],
     [MachineMode.Flush]: [Prop.FlushTime],
     [MachineMode.Steam]: [
@@ -176,7 +181,7 @@ export const VerticalMetrics: Metrics = {
         (idle) => (idle ? Prop.RecentEspressoMaxPressure : Prop.Pressure),
         (idle) => (idle ? Prop.RecentEspressoMaxFlow : Prop.Flow),
         (idle) => (idle ? Prop.RecentEspressoMaxWeight : Prop.Weight),
-        Prop.EspressoTime,
+        (idle) => (idle ? Prop.RecentEspressoTime : Prop.EspressoTime),
         Prop.TargetGroupTemp,
         Prop.ShotHeadTemp,
     ],

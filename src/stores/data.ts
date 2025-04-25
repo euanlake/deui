@@ -131,6 +131,9 @@ const majorToTimedPropMap: Partial<Record<MajorState, TimedProp>> = {
 const initialProperties: Properties = {
     [Prop.Weight]: 0,
     [Prop.RecentEspressoMaxWeight]: 0,
+    [Prop.RecentEspressoMaxFlow]: 0,
+    [Prop.RecentEspressoMaxPressure]: 0,
+    [Prop.RecentEspressoTime]: 0,
     // Add other default properties here...
 }
 
@@ -161,16 +164,22 @@ export const useDataStore = create<DataStore>((set, get) => {
             newProperties[Prop.ShotSampleTime] = Date.now();
         }
         
+        // Extract major and minor state to pass to setMachineStateProperties
+        const majorState = newProperties[Prop.MajorState] as MajorState || MajorState.Sleep;
+        const minorState = newProperties[Prop.MinorState] as MinorState || MinorState.NoState;
+        
         // Update properties immediately
         if (Object.keys(newProperties).length > 0) {
-            console.log('Syncing properties from R1 state:', newProperties);
             setProperties(newProperties as Properties);
+            
+            // Explicitly call setMachineStateProperties to ensure timer state is updated
+            // This is critical for the shot timer functionality
+            setMachineStateProperties(majorState, minorState);
         }
         
         // Update remote state based on connection status
         const newRemoteState = connectionStatusToRemoteState(connectionStatus);
         if (Object.keys(newRemoteState).length > 0) {
-            console.log('Syncing remote state from connection status:', newRemoteState);
             setRemoteState(newRemoteState as RemoteState);
         }
     };
@@ -202,6 +211,7 @@ export const useDataStore = create<DataStore>((set, get) => {
                         Object.assign(next.properties, {
                             [Prop.RecentEspressoMaxFlow]: 0,
                             [Prop.RecentEspressoMaxPressure]: 0,
+                            [Prop.RecentEspressoTime]: 0,
                         })
                     }
 
@@ -299,25 +309,38 @@ export const useDataStore = create<DataStore>((set, get) => {
     let recentTimer: Stopwatch | undefined
 
     function engageTimerForState(majorState: MajorState, minorState: MinorState) {
-        const pourTimedProp =
-            minorState === MinorState.Pour ? majorToTimedPropMap[majorState] : void 0
-
+        // Determine if this is an active espresso state that should trigger the timer
+        const isActiveEspressoState = majorState === MajorState.Espresso && 
+            (minorState === MinorState.Pour || minorState === MinorState.PreInfuse);
+            
+        // Get the appropriate timer property for this machine state
+        const timedProp = isActiveEspressoState ? 
+            majorToTimedPropMap[majorState] : void 0;
+            
         const npnflushTimedProp =
-            minorState !== MinorState.Flush ? majorToTimedPropMap[majorState] : void 0
+            minorState !== MinorState.Flush ? majorToTimedPropMap[majorState] : void 0;
 
-        if (!pourTimedProp) {
-            recentTimer?.stop()
-
-            recentTimer = undefined
-
-            if (npnflushTimedProp) {
-                setProperties({ [npnflushTimedProp]: 0 })
+        if (!timedProp) {
+            // If we're stopping an espresso timer, save the final shot time
+            if (recentTimer && majorState === MajorState.Espresso && 
+                get().properties[Prop.EspressoTime] > 0) {
+                // Save the final shot time to be displayed after the shot ends
+                setProperties({ 
+                    [Prop.RecentEspressoTime]: get().properties[Prop.EspressoTime] 
+                });
             }
-
-            return
+            
+            recentTimer?.stop();
+            recentTimer = undefined;
+            
+            if (npnflushTimedProp) {
+                setProperties({ [npnflushTimedProp]: 0 });
+            }
+            
+            return;
         }
 
-        const timer = timers[pourTimedProp] || (timers[pourTimedProp] = stopwatch())
+        const timer = timers[timedProp] || (timers[timedProp] = stopwatch())
 
         if (timer === recentTimer) {
             /**
@@ -343,7 +366,7 @@ export const useDataStore = create<DataStore>((set, get) => {
          */
         timer.start({
             onTick(t) {
-                setProperties({ [pourTimedProp]: t })
+                setProperties({ [timedProp]: t })
             },
         })
     }
@@ -671,6 +694,34 @@ export const useDataStore = create<DataStore>((set, get) => {
                 console.log(`Successfully loaded ${validProfiles.length} profiles`, validProfiles.map(p => p.id).slice(0, 5));
                 
                 set({ profiles: validProfiles });
+                
+                // After profiles are loaded, check if we have a saved profile in localStorage
+                try {
+                    const { StorageKey } = await import('$/shared/types');
+                    const savedProfileId = localStorage.getItem(StorageKey.LastUsedProfile);
+                    
+                    if (savedProfileId) {
+                        console.log(`Found saved profile ID: ${savedProfileId}, restoring it`);
+                        
+                        // Check if the saved profile exists in the loaded profiles
+                        const profileExists = validProfiles.some(p => p.id === savedProfileId);
+                        
+                        if (profileExists) {
+                            // Update the profileId in the remoteState
+                            set(state => ({
+                                remoteState: {
+                                    ...state.remoteState,
+                                    profileId: savedProfileId
+                                }
+                            }));
+                            console.log(`Successfully restored profile ${savedProfileId} from previous session`);
+                        } else {
+                            console.warn(`Saved profile ${savedProfileId} not found in loaded profiles`);
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error restoring saved profile:', e);
+                }
             } catch (error) {
                 console.error('Error loading profiles from files:', error);
             }
@@ -744,8 +795,6 @@ export const useDataStore = create<DataStore>((set, get) => {
                     const connection = connectionMethod();
                     
                     connection.onMessage((data) => {
-                        console.log(`${connectionName} data received:`, data);
-                        
                         // Force UI update with new reference by creating shallow copy
                         const newData = {...data};
                         
@@ -757,9 +806,6 @@ export const useDataStore = create<DataStore>((set, get) => {
                         setTimeout(() => {
                             const stateStore = get();
                             stateStore.syncR1StateToLegacyState();
-                            
-                            // Log that data was synchronized
-                            console.log(`${connectionName} data synced to UI`);
                         }, 0);
                     });
                     
@@ -798,7 +844,6 @@ export const useDataStore = create<DataStore>((set, get) => {
                     () => apiProvider.websocket.connectToMachineSnapshot(),
                     'machineSnapshot',
                     (data) => {
-                        console.log('Updating machine state with:', data);
                         set({ machineState: data });
                     }
                 );
