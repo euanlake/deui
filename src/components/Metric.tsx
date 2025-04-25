@@ -1,7 +1,15 @@
 import React, { HTMLAttributes } from 'react'
 import tw from 'twin.macro'
 import Label from './primitives/Label'
-import { useMachineState, useWaterLevel, useScaleSnapshot } from '$/stores/data'
+import { 
+    useMachineState, 
+    useWaterLevel, 
+    useScaleSnapshot, 
+    useShotTime,
+    useMaxFlow,
+    useMaxPressure,
+    useMaxWeight
+} from '$/stores/data'
 import { MachineMode } from '$/shared/types'
 import { useIsMachineModeActive } from '$/hooks'
 import { ShotProperty } from '$/shared/r1models'
@@ -18,6 +26,10 @@ export default function Metric({ property: propertyProp, ...props }: Props) {
     const machineState = useMachineState()
     const scaleSnapshot = useScaleSnapshot()
     const waterLevel = useWaterLevel()
+    const shotTime = useShotTime()
+    const maxFlow = useMaxFlow()
+    const maxPressure = useMaxPressure()
+    const maxWeight = useMaxWeight()
 
     const idle = (() => {
         // Determine if machine is in idle state based on machineState
@@ -55,10 +67,17 @@ export default function Metric({ property: propertyProp, ...props }: Props) {
                 return scaleSnapshot?.weight || 0
             case 'waterLevel':
                 return waterLevel
-            // Add time properties when available
+            case 'maxFlow':
+                return maxFlow
+            case 'maxPressure':
+                return maxPressure
+            case 'maxWeight':
+                return maxWeight
+            case 'shotTime':
+            case 'espressoTime':
+                return shotTime
             case 'time':
-                // This would come from a timer based on machine state
-                return 0 // Need to implement timer logic
+                return shotTime
             default:
                 return 0
         }
