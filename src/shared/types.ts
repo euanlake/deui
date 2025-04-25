@@ -353,6 +353,7 @@ export enum Prop {
     Pressure,
     Weight,
     RecentEspressoMaxWeight,
+    RecentEspressoTime,
 }
 
 export const RemoteProfile = z.object({

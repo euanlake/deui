@@ -70,16 +70,12 @@ export class R1WebSocketConnection implements WebSocketConnection {
     if (!this.messageCallback) return;
     
     try {
-      // Log raw data for debugging
-      console.log(`Raw WebSocket data (${this.endpointType}):`, event.data);
-      
       // Parse the JSON data from the message
       let data;
       try {
         data = JSON.parse(event.data);
       } catch (parseError) {
         console.error(`Error parsing WebSocket JSON for ${this.endpointType}:`, parseError);
-        console.log(`Raw data that couldn't be parsed:`, event.data);
         
         // Try to recover if data is not valid JSON
         if (typeof event.data === 'string') {
@@ -91,12 +87,8 @@ export class R1WebSocketConnection implements WebSocketConnection {
         }
       }
       
-      console.log(`Parsed WebSocket data (${this.endpointType}):`, data);
-      
       // Transform the data using our transformer functions
       const transformedData = transformR1WebSocketData(this.endpointType, data);
-      
-      console.log(`Transformed data (${this.endpointType}):`, transformedData);
       
       // Pass the transformed data to the callback
       this.messageCallback(transformedData);
