@@ -11,6 +11,7 @@ const machineStateMap: Record<string, { major: MajorState, minor: MinorState }> 
     'espresso': { major: MajorState.Espresso, minor: MinorState.NoState },
     'espresso.idle': { major: MajorState.Espresso, minor: MinorState.NoState },
     'espresso.preinfusion': { major: MajorState.Espresso, minor: MinorState.PreInfuse },
+    'espresso.preinfuse': { major: MajorState.Espresso, minor: MinorState.PreInfuse },
     'espresso.pour': { major: MajorState.Espresso, minor: MinorState.Pour },
     'steam': { major: MajorState.Steam, minor: MinorState.Pour },
     'steam.idle': { major: MajorState.Steam, minor: MinorState.NoState },
@@ -23,9 +24,6 @@ const machineStateMap: Record<string, { major: MajorState, minor: MinorState }> 
 
 export function machineStateToProperties(machineState: MachineState | null): Partial<Record<Prop, any>> {
     if (!machineState) return {}
-    
-    console.log('Raw machine snapshot data:', JSON.stringify(machineState))
-    console.log('targetGroupTemperature:', machineState.targetGroupTemperature)
     
     // Handle different machine state object structures
     let stateKey = '';
@@ -60,8 +58,6 @@ export function machineStateToProperties(machineState: MachineState | null): Par
         }
     }
     
-    console.log('Parsed state:', mainState, 'Substate:', subState, 'Full state key:', stateKey);
-    
     // Map R1 API machine state to appropriate MajorState/MinorState
     // This is critical for both UI displays and the power button functionality
     let majorState = MajorState.Sleep; // Default to Sleep
@@ -74,6 +70,13 @@ export function machineStateToProperties(machineState: MachineState | null): Par
         majorState = MajorState.Idle;
     } else if (mainState.includes('espresso')) {
         majorState = MajorState.Espresso;
+        
+        // For espresso, also determine the minor state based on substate
+        if (subState === 'preinfusion' || subState === 'preinfuse') {
+            minorState = MinorState.PreInfuse;
+        } else if (subState === 'pour') {
+            minorState = MinorState.Pour;
+        }
     } else if (mainState.includes('steam')) {
         majorState = MajorState.Steam;
     } else if (mainState.includes('water')) {
@@ -84,11 +87,11 @@ export function machineStateToProperties(machineState: MachineState | null): Par
         majorState = MajorState.Sleep;
     }
     
-    // Then determine minor state based on the substate
-    if (subState) {
+    // Then determine minor state based on the substate if not already set
+    if (minorState === MinorState.NoState && subState) {
         if (subState === 'pouring') {
             minorState = MinorState.Pour;
-        } else if (subState === 'preinfuse') {
+        } else if (subState === 'preinfusion' || subState === 'preinfuse') {
             minorState = MinorState.PreInfuse;
         } else if (subState === 'heating' || subState.includes('warming')) {
             minorState = MinorState.HeatWaterTank;
@@ -181,14 +184,11 @@ export function machineStateToProperties(machineState: MachineState | null): Par
         }
     }
     
-    console.log('Transformed data (machine)', result)
     return result
 }
 
 export function scaleSnapshotToProperties(scaleSnapshot: ScaleSnapshot | null): Partial<Record<Prop, any>> {
     if (!scaleSnapshot) return {}
-    
-    console.log('Scale snapshot data:', scaleSnapshot);
     
     // Map the scale weight to the legacy Prop.Weight property
     return {
@@ -198,9 +198,6 @@ export function scaleSnapshotToProperties(scaleSnapshot: ScaleSnapshot | null): 
 
 export function shotSettingsToProperties(shotSettings: ShotSettings | null): Partial<Record<Prop, any>> {
     if (!shotSettings) return {}
-    
-    console.log('Shot settings data:', JSON.stringify(shotSettings))
-    console.log('groupTemp:', shotSettings.groupTemp)
     
     return {
         [Prop.TargetEspressoVol]: shotSettings.targetShotVolume || 0,
@@ -216,8 +213,6 @@ export function shotSettingsToProperties(shotSettings: ShotSettings | null): Par
 
 export function waterLevelsToProperties(waterLevels: { currentPercentage: number; warningThresholdPercentage: number } | null): Partial<Record<Prop, any>> {
     if (!waterLevels) return {}
-    
-    console.log('Water levels data:', waterLevels);
     
     // Add timestamp to ensure UI updates are triggered
     const timestamp = Date.now();

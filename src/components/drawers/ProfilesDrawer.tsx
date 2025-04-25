@@ -5,6 +5,7 @@ import tw from 'twin.macro'
 import { useDataStore } from '$/stores/data'
 import axios from 'axios'
 import { useServerUrl } from '$/hooks'
+import { StorageKey } from '$/shared/types'
 
 interface ProfilesDrawerProps extends Pick<DrawerProps, 'onReject'> {
     onResolve?: () => void
@@ -86,6 +87,10 @@ export default function ProfilesDrawer({ onReject, onResolve }: ProfilesDrawerPr
                                         }
                                     }));
                                     console.log(`Updated profileId in store to: ${id}`);
+                                    
+                                    // Save to localStorage for persistence across sessions
+                                    localStorage.setItem(StorageKey.LastUsedProfile, id);
+                                    console.log(`Saved profile ${id} to localStorage for future sessions`);
 
                                     onResolve?.()
                                 } catch (error) {

@@ -6,6 +6,7 @@ import { mlToL } from '$/utils'
 import WaterBar from '$/components/ui/WaterBar'
 import PowerToggle from '$/components/ui/PowerToggle'
 import BackendAddressControl from '$/components/controls/BackendAddressControl'
+import StopAtVolumeControl from '$/components/controls/StopAtVolumeControl'
 import { useDataStore } from '$/stores/data'
 import { Prop } from '$/shared/types'
 
@@ -15,6 +16,7 @@ export default function SettingsView() {
     return (
         <div tw="px-14">
             <BackendAddressControl />
+            <StopAtVolumeControl />
             <Control
                 label={
                     <>
