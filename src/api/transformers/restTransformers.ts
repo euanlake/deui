@@ -42,18 +42,11 @@ export function transformR1MachineStateToMachineState(r1Data: any): MachineState
  * Transform R1 scale data to our application's Scale format
  */
 export function transformR1ScaleToScale(r1Scale: any): Scale {
-  console.log('Transforming R1 scale data:', r1Scale);
-  
-  // Ensure we correctly map the "state" from API to "connectionState" in our model
-  const connectionState = r1Scale.state === 'connected' ? 'connected' : 'disconnected';
-  
-  console.log(`Scale ${r1Scale.name} connection state: ${connectionState}`);
-  
   return {
     id: r1Scale.id,
     name: r1Scale.name,
     batteryLevel: r1Scale.batteryLevel || 0,
-    connectionState,
+    connectionState: r1Scale.state === 'connected' ? 'connected' : 'disconnected',
     type: 'scale'
   };
 }
@@ -95,9 +88,6 @@ export function transformShotSettingsToR1ShotSettings(settings: ShotSettings): a
  */
 export function transformProfileToR1Profile(profile: Profile): any {
   // R1 expects v2 JSON profile format
-  // If profile already has an id, use it; otherwise it will be assigned by R1
-  
-  // Ensure required fields are present
   const updatedProfile = {
     ...profile,
     version: profile.version || '2.0',
@@ -127,7 +117,6 @@ export function transformR1ProfileToProfile(r1Profile: any): Profile {
     throw new Error('Invalid profile data received from R1');
   }
   
-  // Convert from R1 profile format to our model
   return {
     id: r1Profile.id || undefined,
     version: r1Profile.version || '2.0',

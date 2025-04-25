@@ -5,8 +5,7 @@ import TextField, { TextFieldDecorator } from '../primitives/TextField'
 import Button from '../primitives/Button'
 import { ButtonTheme } from '../primitives/Button'
 import { debounce } from 'lodash'
-import { useServerUrl } from '$/hooks'
-import axios from 'axios'
+import { useDataStore } from '$/stores/data'
 
 type Props = Omit<ControlProps, 'fill' | 'pad'> & {
   defaultValue?: number;
@@ -20,19 +19,18 @@ export default function StopAtVolumeControl({
   ...props 
 }: Props) {
   const [valueString, setValueString] = useState(defaultValue.toString());
-  const serverUrl = useServerUrl({ protocol: 'http' });
+  const { updateShotSettings } = useDataStore();
   
   useEffect(() => {
     setValueString(defaultValue.toString());
   }, [defaultValue]);
 
-  const updateShotSettings = useCallback(
+  const updateVolumeSetting = useCallback(
     debounce(async (volume: number) => {
       try {
-        // Create a full shot settings object with only targetShotVolume changed
-        const shotSettings = {
+        // Create shot settings object with current volume and default values for other fields
+        await updateShotSettings({
           targetShotVolume: volume,
-          // Include default values for other required parameters to maintain API compatibility
           steamSetting: 1,
           targetSteamTemp: 150,
           targetSteamDuration: 30,
@@ -40,15 +38,12 @@ export default function StopAtVolumeControl({
           targetHotWaterVolume: 250,
           targetHotWaterDuration: 15,
           groupTemp: 93.0
-        };
-        
-        await axios.post(`${serverUrl}/api/v1/de1/shotSettings`, shotSettings);
-        console.log('Shot settings updated successfully', shotSettings);
+        });
       } catch (error) {
         console.error('Error updating shot settings:', error);
       }
     }, 500),
-    [serverUrl]
+    [updateShotSettings]
   );
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -57,7 +52,7 @@ export default function StopAtVolumeControl({
     if (onChange) {
       onChange(numericValue);
     }
-    updateShotSettings(numericValue);
+    updateVolumeSetting(numericValue);
   };
 
   const handleClear = () => {
@@ -65,7 +60,7 @@ export default function StopAtVolumeControl({
     if (onChange) {
       onChange(0);
     }
-    updateShotSettings(0);
+    updateVolumeSetting(0);
   };
 
   return (

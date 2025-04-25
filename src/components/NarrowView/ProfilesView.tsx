@@ -1,88 +1,91 @@
-import React, { ReactNode, useEffect, useRef } from 'react'
+import React, { ReactNode, useEffect, useRef, useState } from 'react'
 import tw from 'twin.macro'
 import { css } from '@emotion/react'
 import { useDataStore } from '$/stores/data'
-import axios from 'axios'
-import { useServerUrl } from '$/hooks'
 import { StorageKey } from '$/shared/types'
+
+// Styled components for the different states
+const StatusMessage = tw.div`p-4 text-light-grey`
+const ErrorMessage = tw.div`p-4 text-red`
 
 export default function ProfilesView() {
     const {
         profiles,
-        remoteState: { profileId },
+        profileId,
         loadProfilesFromFiles,
+        uploadProfile
     } = useDataStore()
-
-    const url = useServerUrl({ protocol: 'http' })
+    
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     
     // Load profiles from files when the component mounts
     useEffect(() => {
-        loadProfilesFromFiles();
+        console.log("ProfilesView mounted, loading profiles...");
+        setLoading(true);
+        
+        const loadProfiles = async () => {
+            try {
+                await loadProfilesFromFiles();
+                console.log("Profiles loaded:", profiles.length);
+                setError(null);
+            } catch (err) {
+                console.error("Error loading profiles:", err);
+                setError("Failed to load profiles");
+            } finally {
+                setLoading(false);
+            }
+        };
+        
+        loadProfiles();
     }, [loadProfilesFromFiles]);
+    
+    // Debug log when profiles or profileId changes
+    useEffect(() => {
+        console.log("Profiles updated:", profiles.length, "Current profileId:", profileId);
+    }, [profiles, profileId]);
+
+    if (loading) {
+        return <StatusMessage>Loading profiles...</StatusMessage>;
+    }
+    
+    if (error) {
+        return <ErrorMessage>{error}</ErrorMessage>;
+    }
+    
+    if (profiles.length === 0) {
+        return <StatusMessage>No profiles available</StatusMessage>;
+    }
 
     return (
         <>
-            {profiles.map(({ id, title }) => (
+            {profiles.filter(profile => profile && profile.id).map(profile => (
                 <Item
-                    key={id}
-                    id={id}
+                    key={profile.id}
+                    id={profile.id || ''}
                     onClick={async () => {
                         try {
-                            // Find the profile in the profiles array
-                            const selectedProfile = profiles.find(profile => profile.id === id);
-                            if (!selectedProfile) {
-                                console.error(`Profile with id ${id} not found`);
-                                return;
-                            }
+                            console.log("Selecting profile:", profile.id);
                             
-                            // Ensure profile has the correct format for the API
-                            const formattedProfile = {
-                                ...selectedProfile,
-                                // Ensure version is a string as required by the API
-                                version: typeof selectedProfile.version === 'number' 
-                                    ? selectedProfile.version.toString() 
-                                    : selectedProfile.version || '1.0',
-                            };
+                            // Upload profile using the data store method
+                            await uploadProfile(profile);
                             
-                            // Only include fields that the API expects
-                            const apiProfile = {
-                                title: formattedProfile.title,
-                                author: formattedProfile.author || 'User',
-                                notes: formattedProfile.notes || '',
-                                beverage_type: formattedProfile.beverage_type || 'espresso',
-                                version: formattedProfile.version,
-                                steps: formattedProfile.steps || [],
-                                target_volume: formattedProfile.target_volume,
-                                target_weight: formattedProfile.target_weight,
-                                target_volume_count_start: formattedProfile.target_volume_count_start,
-                                tank_temperature: formattedProfile.tank_temperature
-                            };
-                            
-                            console.log('Sending profile to DE1:', apiProfile);
-                            
-                            // Send the profile to the DE1 using the API v1 endpoint
-                            await axios.post(`${url}/api/v1/de1/profile`, apiProfile);
-                            console.log(`Sent profile ${id} to DE1`);
-                            
-                            // Update the profileId in the store
-                            useDataStore.setState(state => ({
-                                remoteState: {
-                                    ...state.remoteState,
-                                    profileId: id
-                                }
-                            }));
-                            console.log(`Updated profileId in store to: ${id}`);
+                            // Update the profileId in the store directly
+                            useDataStore.setState({ profileId: profile.id });
                             
                             // Save to localStorage for persistence across sessions
-                            localStorage.setItem(StorageKey.LastUsedProfile, id);
-                            console.log(`Saved profile ${id} to localStorage for future sessions`);
+                            if (profile.id) {
+                                localStorage.setItem(StorageKey.LastUsedProfile, profile.id);
+                            }
+                            
+                            console.log("Profile selected:", profile.id);
                         } catch (error) {
-                            console.error('Error sending profile to DE1:', error);
+                            console.error('Error uploading profile:', error);
                         }
                     }}
-                    active={id === profileId}
+                    active={profile.id === profileId}
                 >
-                    {title}
+                    {profile.title || profile.id}
                 </Item>
             ))}
         </>

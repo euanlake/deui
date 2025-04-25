@@ -1,12 +1,13 @@
 import React, { HTMLAttributes } from 'react'
 import tw from 'twin.macro'
 import Label from './primitives/Label'
-import { useMinorState, usePropValue } from '$/stores/data'
-import { MachineMode, MinorState, Prop } from '$/shared/types'
+import { useMachineState, useWaterLevel, useScaleSnapshot } from '$/stores/data'
+import { MachineMode } from '$/shared/types'
 import { useIsMachineModeActive } from '$/hooks'
+import { ShotProperty } from '$/shared/r1models'
 
 interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'property'> {
-    property: Prop | ((idle: boolean) => Prop)
+    property: string | ((idle: boolean) => string)
 }
 
 function defaultFormatFn(value: number) {
@@ -14,24 +15,54 @@ function defaultFormatFn(value: number) {
 }
 
 export default function Metric({ property: propertyProp, ...props }: Props) {
-    const minorState = useMinorState()
+    const machineState = useMachineState()
+    const scaleSnapshot = useScaleSnapshot()
+    const waterLevel = useWaterLevel()
 
     const idle = (() => {
-        switch (minorState) {
-            case MinorState.Flush:
-            case MinorState.Pour:
-            case MinorState.PreInfuse:
-            case MinorState.HeatWaterHeater:
-                return false
-            default:
+        // Determine if machine is in idle state based on machineState
+        if (!machineState) return true;
+        
+        const stateKey = machineState.substate ? 
+            `${machineState.state}.${machineState.substate}` : 
+            machineState.state;
+        
+        // Not idle when in preinfusion, pour, or flushing
+        if (stateKey === 'espresso.preinfusion' || 
+            stateKey === 'espresso.pour' || 
+            stateKey === 'flush') {
+            return false;
         }
-
-        return true
+        return true;
     })()
 
     const property = typeof propertyProp === 'function' ? propertyProp(idle) : propertyProp
 
-    const value = usePropValue(property) || 0
+    const value = (() => {
+        // Get the appropriate value based on the property
+        if (!machineState) return 0
+        
+        switch (property) {
+            case ShotProperty.Pressure:
+                return machineState.pressure
+            case ShotProperty.Flow:
+                return machineState.flow
+            case ShotProperty.GroupTemperature:
+                return machineState.groupTemperature
+            case ShotProperty.MixTemperature:
+                return machineState.mixTemperature
+            case 'weight':
+                return scaleSnapshot?.weight || 0
+            case 'waterLevel':
+                return waterLevel
+            // Add time properties when available
+            case 'time':
+                // This would come from a timer based on machine state
+                return 0 // Need to implement timer logic
+            default:
+                return 0
+        }
+    })()
 
     const active = useIsMachineModeActive()
 
@@ -85,64 +116,87 @@ export default function Metric({ property: propertyProp, ...props }: Props) {
 
 type Metrics = Record<
     MachineMode.Espresso | MachineMode.Flush | MachineMode.Steam | MachineMode.Water,
-    (Prop | ((idle?: boolean) => Prop))[]
+    (string | ((idle?: boolean) => string))[]
 >
 
-const propToMetricMap: Partial<
-    Record<Prop, { label: string; unit: string; formatFn?: (value: number) => string }>
-> = {
-    [Prop.TargetGroupTemp]: {
+// Updated property to metric mapping using string keys
+const propToMetricMap: Record<string, { label: string; unit: string; formatFn?: (value: number) => string }> = {
+    [ShotProperty.GroupTemperature]: {
+        label: 'Metal temp',
+        unit: '',
+    },
+    ['targetGroupTemperature']: {
         label: 'Goal temp',
         unit: '',
         formatFn: (v) => `${v}`,
     },
-    [Prop.ShotHeadTemp]: {
-        label: 'Metal temp',
-        unit: '',
+    [ShotProperty.Pressure]: { 
+        label: 'Pressure', 
+        unit: '' 
     },
-    [Prop.Pressure]: { label: 'Pressure', unit: '' },
-    [Prop.Flow]: { label: 'Flow', unit: '' },
-    [Prop.Weight]: { label: 'Weight', unit: '', formatFn: (v) => v.toFixed(1) },
-    [Prop.RecentEspressoMaxPressure]: { label: 'Max pressure', unit: '' },
-    [Prop.RecentEspressoMaxFlow]: { label: 'Max flow', unit: '' },
-    [Prop.RecentEspressoMaxWeight]: { label: 'Max weight', unit: '', formatFn: (v) => v.toFixed(1) },
-    [Prop.RecentEspressoTime]: { 
+    [ShotProperty.Flow]: { 
+        label: 'Flow', 
+        unit: '' 
+    },
+    ['weight']: { 
+        label: 'Weight', 
+        unit: '', 
+        formatFn: (v) => v.toFixed(1) 
+    },
+    ['maxPressure']: { 
+        label: 'Max pressure', 
+        unit: '' 
+    },
+    ['maxFlow']: { 
+        label: 'Max flow', 
+        unit: '' 
+    },
+    ['maxWeight']: { 
+        label: 'Max weight', 
+        unit: '', 
+        formatFn: (v) => v.toFixed(1) 
+    },
+    ['shotTime']: { 
         label: 'Shot time', 
         unit: '', 
         formatFn: (v) => v.toFixed(0) 
     },
-    [Prop.EspressoTime]: {
+    ['espressoTime']: {
         label: 'Shot time',
         unit: '',
         formatFn: (v) => v.toFixed(0),
     },
-    [Prop.FlushTime]: {
+    ['flushTime']: {
         label: 'Time',
         unit: '',
         formatFn: (v) => v.toFixed(0),
     },
-    [Prop.TargetSteamTemp]: {
+    ['targetSteamTemp']: {
         label: 'Goal temp',
         unit: '',
         formatFn: (v) => `${v}`,
     },
-    [Prop.ShotSteamTemp]: {
+    [ShotProperty.MixTemperature]: {
         label: 'Steam temp',
         unit: '',
         formatFn: (v) => `${v}`,
     },
-    [Prop.SteamTime]: { label: 'Time', unit: '', formatFn: (v) => v.toFixed(0) },
-    [Prop.TargetHotWaterTemp]: {
+    ['steamTime']: { 
+        label: 'Time', 
+        unit: '', 
+        formatFn: (v) => v.toFixed(0) 
+    },
+    ['targetHotWaterTemp']: {
         label: 'Goal temp',
         unit: '',
         formatFn: (v) => v.toFixed(0),
     },
-    [Prop.TargetHotWaterVol]: {
+    ['targetHotWaterVol']: {
         label: 'Goal vol',
         unit: '',
         formatFn: (v) => v.toFixed(0),
     },
-    [Prop.WaterTime]: {
+    ['waterTime']: {
         label: 'Time',
         unit: '',
         formatFn: (v) => v.toFixed(0),
@@ -151,38 +205,38 @@ const propToMetricMap: Partial<
 
 export const Metrics: Metrics = {
     [MachineMode.Espresso]: [
-        Prop.TargetGroupTemp,
-        Prop.ShotHeadTemp,
-        (idle) => (idle ? Prop.RecentEspressoMaxPressure : Prop.Pressure),
-        (idle) => (idle ? Prop.RecentEspressoMaxFlow : Prop.Flow),
-        (idle) => (idle ? Prop.RecentEspressoMaxWeight : Prop.Weight),
-        (idle) => (idle ? Prop.RecentEspressoTime : Prop.EspressoTime),
+        'targetGroupTemperature',
+        ShotProperty.GroupTemperature,
+        (idle) => (idle ? 'maxPressure' : ShotProperty.Pressure),
+        (idle) => (idle ? 'maxFlow' : ShotProperty.Flow),
+        (idle) => (idle ? 'maxWeight' : 'weight'),
+        (idle) => (idle ? 'shotTime' : 'espressoTime'),
     ],
-    [MachineMode.Flush]: [Prop.FlushTime],
+    [MachineMode.Flush]: ['flushTime'],
     [MachineMode.Steam]: [
-        Prop.TargetSteamTemp,
-        Prop.ShotSteamTemp,
-        Prop.Pressure,
-        Prop.Flow,
-        Prop.SteamTime,
+        'targetSteamTemp',
+        ShotProperty.MixTemperature,
+        ShotProperty.Pressure,
+        ShotProperty.Flow,
+        'steamTime',
     ],
     [MachineMode.Water]: [
-        Prop.TargetHotWaterTemp,
-        Prop.TargetHotWaterVol,
-        Prop.Flow,
-        Prop.Weight,
-        Prop.WaterTime,
+        'targetHotWaterTemp',
+        'targetHotWaterVol',
+        ShotProperty.Flow,
+        'weight',
+        'waterTime',
     ],
 }
 
 export const VerticalMetrics: Metrics = {
     ...Metrics,
     [MachineMode.Espresso]: [
-        (idle) => (idle ? Prop.RecentEspressoMaxPressure : Prop.Pressure),
-        (idle) => (idle ? Prop.RecentEspressoMaxFlow : Prop.Flow),
-        (idle) => (idle ? Prop.RecentEspressoMaxWeight : Prop.Weight),
-        (idle) => (idle ? Prop.RecentEspressoTime : Prop.EspressoTime),
-        Prop.TargetGroupTemp,
-        Prop.ShotHeadTemp,
+        (idle) => (idle ? 'maxPressure' : ShotProperty.Pressure),
+        (idle) => (idle ? 'maxFlow' : ShotProperty.Flow),
+        (idle) => (idle ? 'maxWeight' : 'weight'),
+        (idle) => (idle ? 'shotTime' : 'espressoTime'),
+        'targetGroupTemperature',
+        ShotProperty.GroupTemperature,
     ],
 }

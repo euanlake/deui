@@ -1,21 +1,21 @@
-import { usePhase, useStatus } from '$/stores/data'
+import { usePhase, useStatus, useR1ConnectionSettings } from '$/stores/data'
 import React, { useRef } from 'react'
 import tw from 'twin.macro'
 import Control, { ControlProps } from '../Control'
 import StatusIndicator from '../StatusIndicator'
 import TextField, { TextFieldDecorator } from '../primitives/TextField'
-import { useServerUrl } from '$/hooks'
 
 type Props = Omit<ControlProps, 'fill' | 'pad'>
 
 export default function BackendAddressControl({ label = 'Connection', ...props }: Props) {
     const phase = usePhase()
-
     const status = useStatus()
-
     const fieldRef = useRef<HTMLInputElement>(null)
-
-    const url = useServerUrl({ protocol: 'ws' }).replace(/^ws:\/\//, '')
+    const { settings } = useR1ConnectionSettings()
+    
+    // Create the URL display string from R1 connection settings
+    const protocol = settings.useSecureProtocol ? 'wss' : 'ws'
+    const url = `${settings.hostname}:${settings.port}`
 
     return (
         <Control

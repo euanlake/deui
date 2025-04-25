@@ -26,10 +26,9 @@ export function transformR1MachineSnapshotToMachineState(r1Data: any): MachineSt
   
   // Normalize preinfusion variants (API might use either spelling)
   if (substate === 'preinfusion' || substate === 'preinfuse') {
-    substate = 'preinfusion'; // Ensure consistent mapping to our state model
+    substate = 'preinfusion';
   }
   
-  // Ensure proper type conversions and handle potential nulls
   return {
     timestamp: r1Data.timestamp || new Date().toISOString(),
     state: state,
@@ -55,7 +54,7 @@ export function transformR1ScaleSnapshotToScale(r1Data: any): ScaleSnapshot {
   return {
     timestamp: r1Data.timestamp || new Date().toISOString(),
     weight: Number(r1Data.weight || 0),
-    batteryLevel: Number(r1Data.batteryLevel || 0) // Default to 0 if not provided
+    batteryLevel: Number(r1Data.batteryLevel || 0)
   };
 }
 

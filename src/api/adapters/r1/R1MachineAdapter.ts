@@ -67,8 +67,29 @@ export class R1MachineAdapter implements MachineApi {
    */
   async uploadProfile(profile: Profile): Promise<void> {
     try {
-      const r1Profile = transformProfileToR1Profile(profile);
-      await axios.post(`${this.baseUrl}/api/v1/de1/profile`, r1Profile);
+      // Make sure profile has required fields for the R1 API
+      const profileToUpload = {
+        // Essential fields for the R1 API
+        title: profile.title || 'Unnamed Profile',
+        author: profile.author || 'User',
+        notes: profile.notes || '',
+        beverage_type: profile.beverage_type || 'espresso',
+        // Ensure version is a string
+        version: typeof profile.version === 'number' ? 
+          String(profile.version) : (profile.version || '2.0'),
+        // Other required fields
+        steps: Array.isArray(profile.steps) ? profile.steps : [],
+        // Include optional target values if they exist
+        ...(profile.target_volume !== undefined && { target_volume: profile.target_volume }),
+        ...(profile.target_weight !== undefined && { target_weight: profile.target_weight }),
+        ...(profile.target_volume_count_start !== undefined && { 
+          target_volume_count_start: profile.target_volume_count_start 
+        }),
+        ...(profile.tank_temperature !== undefined && { tank_temperature: profile.tank_temperature })
+      };
+      
+      // Send profile directly to R1 API
+      await axios.post(`${this.baseUrl}/api/v1/de1/profile`, profileToUpload);
     } catch (error) {
       console.error('Error uploading profile to R1:', error);
       
@@ -165,8 +186,21 @@ export class R1MachineAdapter implements MachineApi {
    */
   async updateShotSettings(settings: ShotSettings): Promise<void> {
     try {
-      const r1Settings = transformShotSettingsToR1ShotSettings(settings);
-      await axios.post(`${this.baseUrl}/api/v1/de1/shotSettings`, r1Settings);
+      // The R1 API expected format matches our ShotSettings interface
+      // Just ensure all required fields are present
+      const shotSettings = {
+        // Ensure all required properties are included with defaults if needed
+        steamSetting: settings.steamSetting ?? 1,
+        targetSteamTemp: settings.targetSteamTemp ?? 150,
+        targetSteamDuration: settings.targetSteamDuration ?? 30,
+        targetHotWaterTemp: settings.targetHotWaterTemp ?? 90,
+        targetHotWaterVolume: settings.targetHotWaterVolume ?? 250,
+        targetHotWaterDuration: settings.targetHotWaterDuration ?? 15,
+        targetShotVolume: settings.targetShotVolume ?? 36,
+        groupTemp: settings.groupTemp ?? 93.0
+      };
+      
+      await axios.post(`${this.baseUrl}/api/v1/de1/shotSettings`, shotSettings);
     } catch (error) {
       console.error('Error updating shot settings with R1:', error);
       
