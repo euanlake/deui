@@ -22,7 +22,7 @@ export default function SubstateSwitch() {
 
     const activeMode = useIsMachineModeActive()
 
-    const value = machineMode === MachineMode.Server ? connPhase : activeMode ? substate : void 0
+    const value = String(machineMode) === 'Server' ? connPhase : activeMode ? substate : void 0
 
     return (
         <TextSwitch

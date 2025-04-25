@@ -1,7 +1,9 @@
+import React from 'react'
 import Drawer, { DrawerHeader, DrawerProps } from '$/components/drawers/Drawer'
 import tw from 'twin.macro'
 import ThemeControl from '../controls/ThemeControl'
 import BackendAddressControl from '../controls/BackendAddressControl'
+import ScaleControl from '../controls/ScaleControl'
 
 export default function SettingsDrawer({ onReject }: Pick<DrawerProps, 'onReject'>) {
     return (
@@ -17,6 +19,7 @@ export default function SettingsDrawer({ onReject }: Pick<DrawerProps, 'onReject
             <DrawerHeader title="Settings" />
             <div css={tw`px-14`}>
                 <BackendAddressControl />
+                <ScaleControl fill pad />
                 <ThemeControl fill pad />
             </div>
         </Drawer>

@@ -6,16 +6,20 @@ import { HTMLAttributes } from 'react'
 import { toaster } from 'toasterhea'
 import tw from 'twin.macro'
 import ProfilesDrawer from '../drawers/ProfilesDrawer'
-import { Layer } from '$/shared/types'
+import { Layer, MachineMode } from '$/shared/types'
 import { useCurrentProfileLabel } from '$/stores/data'
 import { useMetrics } from '$/hooks'
+import { useUiStore } from '$/stores/ui'
 
 const profilesDrawer = toaster(ProfilesDrawer, Layer.Drawer)
 
 export default function Controller() {
     const profileLabel = useCurrentProfileLabel()
+    const { machineMode } = useUiStore()
 
     const metrics = useMetrics()
+
+    const gridColsClass = machineMode === MachineMode.Espresso ? tw`grid-cols-6` : tw`grid-cols-5`
 
     return (
         <div
@@ -122,16 +126,18 @@ export default function Controller() {
             <div css={tw`mt-8`}>
                 <Control>
                     <div
-                        css={tw`
-                            h-full
-                            items-center
-                            grid
-                            grid-cols-5
-                            gap-8
-                            px-10
+                        css={[
+                            tw`
+                                h-full
+                                items-center
+                                grid
+                                gap-6
+                                px-8
 
-                            [> *]:-translate-y-1.5
-                        `}
+                                [> *]:-translate-y-1.5
+                            `,
+                            gridColsClass
+                        ]}
                     >
                         {metrics.map((property) => (
                             <Metric

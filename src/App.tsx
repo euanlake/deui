@@ -14,14 +14,14 @@ import { useServerUrl } from './hooks'
 
 const App = () => {
     const { theme } = useUiStore()
+    const { loadProfilesFromFiles } = useDataStore()
 
     useAutoConnectEffect()
 
-    const { fetchProfiles } = useDataStore()
-
-    const url = useServerUrl({ protocol: 'http' })
-
-    useEffect(() => void fetchProfiles(`${url}/profile-list`), [fetchProfiles, url])
+    // Load profiles from the public/profiles folder on app start
+    useEffect(() => {
+        loadProfilesFromFiles();
+    }, [loadProfilesFromFiles]);
 
     return (
         <>
