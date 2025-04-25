@@ -1148,3 +1148,8 @@ export function useMaxPressure() {
 export function useMaxWeight() {
     return useDataStore(state => state.recentEspressoMaxWeight);
 }
+
+// Add hook to access shot settings
+export function useShotSettings() {
+    return useDataStore(state => state.shotSettings);
+}

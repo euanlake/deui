@@ -8,7 +8,8 @@ import {
     useShotTime,
     useMaxFlow,
     useMaxPressure,
-    useMaxWeight
+    useMaxWeight,
+    useShotSettings
 } from '$/stores/data'
 import { MachineMode } from '$/shared/types'
 import { useIsMachineModeActive } from '$/hooks'
@@ -30,6 +31,7 @@ export default function Metric({ property: propertyProp, ...props }: Props) {
     const maxFlow = useMaxFlow()
     const maxPressure = useMaxPressure()
     const maxWeight = useMaxWeight()
+    const shotSettings = useShotSettings()
 
     const idle = (() => {
         // Determine if machine is in idle state based on machineState
@@ -73,6 +75,17 @@ export default function Metric({ property: propertyProp, ...props }: Props) {
                 return maxPressure
             case 'maxWeight':
                 return maxWeight
+            case 'targetGroupTemperature':
+                // Use the target group temperature from machine state (ws/v1/de1/snapshot)
+                return machineState.targetGroupTemperature || 0
+            case 'targetSteamTemp':
+                // For steam temp, use targetMixTemperature from machine state
+                return machineState.targetMixTemperature || 0
+            case 'targetHotWaterTemp':
+                // Use shotSettings for hot water values as they're not in the machine state
+                return shotSettings?.targetHotWaterTemp || 0
+            case 'targetHotWaterVol':
+                return shotSettings?.targetHotWaterVolume || 0
             case 'shotTime':
             case 'espressoTime':
                 return shotTime
@@ -193,12 +206,12 @@ const propToMetricMap: Record<string, { label: string; unit: string; formatFn?: 
     ['targetSteamTemp']: {
         label: 'Goal temp',
         unit: '',
-        formatFn: (v) => `${v}`,
+        formatFn: (v) => `${Math.round(v)}`,
     },
     [ShotProperty.MixTemperature]: {
         label: 'Steam temp',
         unit: '',
-        formatFn: (v) => `${v}`,
+        formatFn: (v) => `${Math.round(v)}`,
     },
     ['steamTime']: { 
         label: 'Time', 
