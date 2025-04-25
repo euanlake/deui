@@ -137,6 +137,22 @@ const initialProperties: Properties = {
     // Add other default properties here...
 }
 
+// Helper function to safely get the API URL
+function getApiUrl(apiProvider: ApiProvider, fallbackUrl?: string): string {
+    // First try to use the provided fallback URL
+    if (fallbackUrl) return fallbackUrl;
+    
+    // Try to access baseUrl property safely using type assertion
+    const providerWithBaseUrl = apiProvider as any;
+    if (providerWithBaseUrl.baseUrl) return providerWithBaseUrl.baseUrl;
+    
+    // Get from connection settings
+    const store = useDataStore.getState();
+    const { hostname, port, useSecureProtocol } = store.r1ConnectionSettings;
+    const protocol = useSecureProtocol ? 'https' : 'http';
+    return `${protocol}://${hostname}:${port}`;
+}
+
 export const useDataStore = create<DataStore>((set, get) => {
     let ctrl: WsController | undefined
     let lastConnectionUrl: string | null = null
@@ -314,19 +330,28 @@ export const useDataStore = create<DataStore>((set, get) => {
             (minorState === MinorState.Pour || minorState === MinorState.PreInfuse);
             
         // Get the appropriate timer property for this machine state
-        const timedProp = isActiveEspressoState ? 
-            majorToTimedPropMap[majorState] : void 0;
-            
-        const npnflushTimedProp =
-            minorState !== MinorState.Flush ? majorToTimedPropMap[majorState ?? MajorState.Unknown] : void 0
+        const timedProp = isActiveEspressoState && majorState in majorToTimedPropMap
+            ? majorToTimedPropMap[majorState] 
+            : undefined;
+        
+        // Use safe accessing for non-flush timed prop
+        let npnflushTimedProp: TimedProp | undefined = undefined;
+        if (minorState !== MinorState.Flush && 
+            majorState !== undefined && 
+            majorState in majorToTimedPropMap) {
+            npnflushTimedProp = majorToTimedPropMap[majorState];
+        }
 
         if (!timedProp) {
             // If we're stopping an espresso timer, save the final shot time
-            if (recentTimer && majorState === MajorState.Espresso && 
-                get().properties[Prop.EspressoTime] > 0) {
+            const espressoTime = get().properties[Prop.EspressoTime];
+            if (recentTimer && 
+                majorState === MajorState.Espresso && 
+                typeof espressoTime === 'number' && 
+                espressoTime > 0) {
                 // Save the final shot time to be displayed after the shot ends
                 setProperties({ 
-                    [Prop.RecentEspressoTime]: get().properties[Prop.EspressoTime] 
+                    [Prop.RecentEspressoTime]: espressoTime 
                 });
             }
             
@@ -453,7 +478,7 @@ export const useDataStore = create<DataStore>((set, get) => {
             await sleep()
 
             try {
-                ctrl = wsStream(url)
+                ctrl = wsStream(url as any)
 
                 while (true) {
                     const chunk = await ctrl.read()
@@ -787,26 +812,40 @@ export const useDataStore = create<DataStore>((set, get) => {
                 
                 // Setup WebSocket connections with proper error handling and reconnection
                 const setupWebsocket = (
-                    connectionMethod: () => any, // Use any temporarily to avoid type issues
+                    connectionMethod: () => any,
                     connectionName: string,
                     onData: (data: any) => void
                 ) => {
                     try {
                         const connection = connectionMethod();
                         
-                        connection.onMessage((data: any) => {
-                            onData(data);
-                            
-                            // This ensures UI components re-render with new data
-                            setTimeout(() => {
-                                const stateStore = get();
-                                stateStore.syncR1StateToLegacyState();
-                            }, 0);
-                        });
+                        if (!connection) {
+                            console.warn(`No connection returned for ${connectionName}`);
+                            return null;
+                        }
                         
-                        connection.onError((error: any) => {
-                            console.error(`WebSocket error (${connectionName}):`, error);         
-                        });
+                        // Ensure onMessage and onError methods exist before using them
+                        if (connection && typeof connection.onMessage === 'function') {
+                            connection.onMessage(onData);
+                            
+                            // Ensure UI components re-render with new data after data updates
+                            const originalOnData = onData;
+                            connection.onMessage = (data: any) => {
+                                originalOnData(data);
+                                
+                                // Sync state after each message
+                                setTimeout(() => {
+                                    const stateStore = get();
+                                    stateStore.syncR1StateToLegacyState();
+                                }, 0);
+                            };
+                        }
+                        
+                        if (connection && typeof connection.onError === 'function') {
+                            connection.onError((error: any) => {
+                                console.error(`WebSocket error (${connectionName}):`, error);
+                            });
+                        }
                         
                         return connection;
                     } catch (error) {
@@ -1031,8 +1070,9 @@ export const useDataStore = create<DataStore>((set, get) => {
                     await apiProvider.device.scanForDevices()
                 } catch (err) {
                     console.warn('Device adapter scan failed, using direct API call:', err)
-                    // Fall back to direct API call
-                    await axios.get(`${apiProvider.baseUrl || ''}/api/v1/devices/scan`, {
+                    // Fall back to direct API call without using baseUrl property
+                    const apiUrl = getApiUrl(apiProvider);
+                    await axios.get(`${apiUrl}/api/v1/devices/scan`, {
                         timeout: 10000 // 10 second timeout
                     })
                 }
@@ -1084,17 +1124,21 @@ export const useDataStore = create<DataStore>((set, get) => {
             if (!apiProvider) return
             
             try {
-
                 if (!apiProvider.machine) return;
-                // Convert version to string if needed
-                const fixedProfile = {
+                
+                // Convert profile to match the required API format
+                const convertedProfile = {
                     ...profile,
-                    version: String(profile.version)
+                    version: String(profile.version),
+                    // Transform TeaPortafilter to a compatible value
+                    beverage_type: profile.beverage_type === 'tea_portafilter' ? 'tea' : profile.beverage_type
                 };
-                await apiProvider.machine.uploadProfile(fixedProfile);
+                
+                // Use type assertion to handle the incompatible types
+                await apiProvider.machine.uploadProfile(convertedProfile as any);
+                
                 // Refresh the profile list
                 get().fetchProfiles(apiProvider.machine as any);
-
             } catch (error) {
                 console.error('Failed to upload profile:', error);
             }
