@@ -791,26 +791,23 @@ export const useDataStore = create<DataStore>((set, get) => {
                     connectionName: string,
                     onData: (data: any) => void
                 ) => {
-                    console.log(`Setting up ${connectionName} WebSocket connection`);
-                    const connection = connectionMethod();
-                    
-                    connection.onMessage((data) => {
-                        // Force UI update with new reference by creating shallow copy
-                        const newData = {...data};
+                    try {
+                        const connection = connectionMethod();
                         
-                        // Call the handler to update state
-                        onData(newData);
+                        connection.onMessage((data: any) => {
+                            onData(data);
+                            
+                            // This ensures UI components re-render with new data
+                            setTimeout(() => {
+                                const stateStore = get();
+                                stateStore.syncR1StateToLegacyState();
+                            }, 0);
+                        });
                         
-                        // Trigger legacy state sync immediately after data update
-                        // This ensures UI components re-render with new data
-                        setTimeout(() => {
-                            const stateStore = get();
-                            stateStore.syncR1StateToLegacyState();
-                        }, 0);
-                    });
-                    
-                    connection.onError((error) => {
-                        console.error(`WebSocket error (${connectionName}):`, error);         
+                        connection.onError((error: any) => {
+                            console.error(`WebSocket error (${connectionName}):`, error);         
+                        });
+                        
                         return connection;
                     } catch (error) {
                         console.error(`Failed to setup ${connectionName} websocket:`, error);
@@ -847,50 +844,77 @@ export const useDataStore = create<DataStore>((set, get) => {
                         }
                     );
                     
-                    return connection;
-                };
-                
-                // Setup all WebSocket connections
-                const machineSnapshotConnection = setupWebsocket(
-                    () => apiProvider.websocket.connectToMachineSnapshot(),
-                    'machineSnapshot',
-                    (data) => {
-                        set({ machineState: data });
+                    // Shot settings
+                    const shotSettingsConnection = setupWebsocket(
+                        () => apiProvider.websocket.connectToShotSettings(),
+                        'shotSettings',
+                        (data) => set({ shotSettings: data })
+                    );
+                    
+                    // Water levels
+                    const waterLevelsConnection = setupWebsocket(
+                        () => apiProvider.websocket.connectToWaterLevels(),
+                        'waterLevels',
+                        (data) => set({ waterLevels: data })
+                    );
+                    
+                    // Update state with connections
+                    set({
+                        connectionStatus: 'connected',
+                        connectionError: null,
+                        r1ConnectionAttempts: 0,
+                        r1LastConnectionError: null,
+                        wsState: WebSocketState.Open // Update legacy state for compatibility
+                    });
+                    
+                    // Update remote state for compatibility
+                    setRemoteState({ deviceReady: true });
+                    
+                    // Perform initial sync of R1 state to legacy state
+                    get().syncR1StateToLegacyState();
+                } catch (error) {
+                    console.error('Failed to connect to API:', error);
+                    
+                    // Create a user-friendly error message
+                    const errorMessage = error instanceof Error 
+                        ? error.message 
+                        : 'Unknown connection error';
+                    
+                    // Update store with error state
+                    set({ 
+                        connectionStatus: 'error',
+                        connectionError: errorMessage,
+                        r1LastConnectionError: errorMessage,
+                        wsState: WebSocketState.Closed // Update legacy state for compatibility
+                    });
+                    
+                    // Reset remote state on error
+                    setRemoteState(getDefaultRemoteState());
+                    
+                    // Setup automatic reconnection if enabled
+                    if (get().r1AutoReconnect) {
+                        // Calculate backoff time based on number of attempts
+                        const backoffTime = Math.min(
+                            30000, // Max 30 seconds
+                            1000 * Math.pow(1.5, Math.min(10, get().r1ConnectionAttempts))
+                        );
+                        
+                        console.log(`Will attempt to reconnect in ${backoffTime/1000} seconds...`);
+                        
+                        // Clear any existing timer
+                        if (reconnectTimer) {
+                            clearTimeout(reconnectTimer);
+                        }
+                        
+                        // Set new reconnect timer
+                        reconnectTimer = setTimeout(() => {
+                            reconnectTimer = null;
+                            if (get().r1AutoReconnect) {
+                                get().reconnect();
+                            }
+                        }, backoffTime);
                     }
-                );
-                
-                const scaleSnapshotConnection = setupWebsocket(
-                    () => apiProvider.websocket.connectToScaleSnapshot(),
-                    'scaleSnapshot',
-                    (data) => set({ scaleSnapshot: data })
-                );
-                
-                const shotSettingsConnection = setupWebsocket(
-                    () => apiProvider.websocket.connectToShotSettings(),
-                    'shotSettings',
-                    (data) => set({ shotSettings: data })
-                );
-                
-                const waterLevelsConnection = setupWebsocket(
-                    () => apiProvider.websocket.connectToWaterLevels(),
-                    'waterLevels',
-                    (data) => set({ waterLevels: data })
-                );
-                
-                // Update state with connections
-                set({
-                    connectionStatus: 'connected',
-                    connectionError: null,
-                    r1ConnectionAttempts: 0,
-                    r1LastConnectionError: null,
-                    wsState: WebSocketState.Open // Update legacy state for compatibility
-                });
-                
-                // Update remote state for compatibility
-                setRemoteState({ deviceReady: true });
-                
-                // Perform initial sync of R1 state to legacy state
-                get().syncR1StateToLegacyState();
+                }
             } catch (error) {
                 console.error('Failed to connect to API:', error);
                 
