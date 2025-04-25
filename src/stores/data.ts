@@ -45,6 +45,13 @@ let shotTimerInterval: ReturnType<typeof setInterval> | null = null;
 let shotStartTime: number | null = null;
 let shotElapsedTime = 0;
 
+// Water level filtering state
+const WATER_LEVEL_UPDATE_INTERVAL = 10000; // Update every 10 seconds
+const WATER_LEVEL_HISTORY_DURATION = 30000; // Keep 30 seconds of history
+let waterLevelHistory: {timestamp: number, level: number}[] = [];
+let lastWaterLevelUpdateTime = 0;
+let filteredWaterLevel = 0;
+
 // Type augmentation to allow 'tea_portafilter'
 type ExtendedProfile = Omit<Profile, 'beverage_type'> & {
     beverage_type: string | BeverageType; // Allow any string for compatibility with legacy profiles
@@ -103,6 +110,7 @@ interface DataStore {
     loadProfilesFromFiles: () => void
     getScales: () => Promise<Scale[]>
     profileId: string | null
+    filteredWaterLevel: number;
 }
 
 export const useDataStore = create<DataStore>((set, get) => {
@@ -181,7 +189,12 @@ export const useDataStore = create<DataStore>((set, get) => {
                 shotSettings: null,
                 waterLevels: null,
                 devices: [],
-                profileId: null
+                profileId: null,
+                filteredWaterLevel: 0,
+                recentEspressoTime: 0,
+                recentEspressoMaxFlow: 0,
+                recentEspressoMaxPressure: 0,
+                recentEspressoMaxWeight: 0
             });
         },
         fetchProfiles() {
@@ -196,6 +209,7 @@ export const useDataStore = create<DataStore>((set, get) => {
         scaleSnapshot,
         shotSettings: null,
         waterLevels: null,
+        filteredWaterLevel: 0,
         recentEspressoTime: 0,
         recentEspressoMaxFlow: 0,
         recentEspressoMaxPressure: 0,
@@ -445,7 +459,37 @@ export const useDataStore = create<DataStore>((set, get) => {
                     const waterLevelsConnection = setupWebsocket(
                         () => apiProvider.websocket.connectToWaterLevels(),
                         'waterLevels',
-                        (data) => set({ waterLevels: data })
+                        (data) => {
+                            // Store the raw water levels data
+                            set({ waterLevels: data });
+                            
+                            // Process water level for smoother display
+                            if (data && typeof data.currentPercentage === 'number') {
+                                const now = Date.now();
+                                const level = data.currentPercentage;
+                                
+                                // Add current reading to history
+                                waterLevelHistory.push({timestamp: now, level});
+                                
+                                // Remove old readings (older than 30 seconds)
+                                waterLevelHistory = waterLevelHistory.filter(
+                                    entry => now - entry.timestamp < WATER_LEVEL_HISTORY_DURATION
+                                );
+                                
+                                // Only update the filtered value every 10 seconds
+                                if (now - lastWaterLevelUpdateTime >= WATER_LEVEL_UPDATE_INTERVAL) {
+                                    // Calculate average of readings in history
+                                    const sum = waterLevelHistory.reduce((acc, entry) => acc + entry.level, 0);
+                                    filteredWaterLevel = waterLevelHistory.length > 0 
+                                        ? sum / waterLevelHistory.length 
+                                        : level;
+                                    
+                                    // Update the state with filtered value
+                                    set({ filteredWaterLevel });
+                                    lastWaterLevelUpdateTime = now;
+                                }
+                            }
+                        }
                     );
                     
                     // Update state with connections
@@ -1007,8 +1051,11 @@ export function useMinorState() {
 }
 
 export function useWaterLevel() {
-    const waterLevels = useDataStore(state => state.waterLevels)
-    return waterLevels?.currentPercentage ?? 0
+    const filteredLevel = useDataStore(state => state.filteredWaterLevel);
+    const waterLevels = useDataStore(state => state.waterLevels);
+    
+    // If we have a filtered level, use it; otherwise fall back to raw value
+    return filteredLevel || (waterLevels?.currentPercentage ?? 0);
 }
 
 export function usePhase() {
