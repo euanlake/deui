@@ -47,7 +47,7 @@ export default function TextSwitch<T extends number | string>({ items = [], valu
         <>
             &zwnj;
             {items.map(([id, label]) => (
-                <Item key={id} active={id === value}>
+                <Item key={String(id)} active={id === value}>
                     {label || id}
                 </Item>
             ))}

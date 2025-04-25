@@ -4,93 +4,78 @@ import {
     CharAddr,
     ConnectionPhase,
     MachineMode,
-    MajorState,
-    MinorState,
-    isCharMessage,
-    ChunkType,
-    Profile,
-    Prop,
-    Properties,
-    RemoteState,
-    WebSocketState,
-    isStateMessage,
+    BeverageType,
+    StorageKey
 } from '$/shared/types'
-import wsStream, { WsController } from '$/utils/wsStream'
 import { produce } from 'immer'
-import { MutableRefObject, useEffect, useMemo, useRef, useCallback } from 'react'
+import { MutableRefObject, useEffect, useMemo, useRef, useCallback, useState } from 'react'
 import { create } from 'zustand'
 import { Buffer } from 'buffer'
 import { decodeShotFrame, decodeShotHeader } from '$/utils/shot'
-import getDefaultRemoteState from '$/utils/getDefaultRemoteState'
 import stopwatch from '$/utils/stopwatch'
 import avg from '$/utils/avg'
 import { useUiStore } from './ui'
 import { sleep } from '$/shared/utils'
 import axios from 'axios'
 import { z } from 'zod'
-import { useServerUrl, useShouldUseR1Api, useR1Availability } from '$/hooks'
 import { ApiProvider } from '../api/interfaces/ApiProvider'
 import { R1ApiProvider } from '../api/adapters/r1/R1ApiProvider'
 import { MockApiProvider } from '../api/adapters/mock/MockApiProvider'
-import { Device } from '../api/models/Device'
-import { MachineState, MachineStateType, ShotSettings } from '../api/models/Machine'
-import { Scale, ScaleSnapshot } from '../api/models/Scale'
-import { WebSocketConnection } from '../api/interfaces/WebSocketConnection'
-import {
-    machineStateToProperties,
-    scaleSnapshotToProperties,
-    shotSettingsToProperties,
-    waterLevelsToProperties,
-    connectionStatusToRemoteState
-} from '../api/transformers/stateTransformers'
 import { ScaleApi } from '../api/interfaces/ScaleApi'
 import { WebSocketApi } from '../api/interfaces/WebSocketApi'
+import { WebSocketConnection } from '../api/interfaces/WebSocketConnection'
+import { 
+    Device, 
+    MachineState, 
+    MachineStateType, 
+    Profile, 
+    Scale, 
+    ScaleSnapshot, 
+    ShotSettings,
+    WaterLevels,
+    ConnectionStatus,
+    isMachineOn,
+    getMajorState,
+    getMinorState
+} from '../shared/r1models'
+
+// Type augmentation to allow 'tea_portafilter'
+type ExtendedProfile = Omit<Profile, 'beverage_type'> & {
+    beverage_type: string | BeverageType; // Allow any string for compatibility with legacy profiles
+};
 
 interface DataStore {
-    // Legacy state
-    wsState: WebSocketState
-    remoteState: RemoteState
-    properties: Properties
-    connect: (url: string, options?: { onDeviceReady?: () => void }) => Promise<void>
     disconnect: () => void
     profiles: Profile[]
     fetchProfiles: (url: string) => void
     
-    // New R1 API state
     apiProvider: ApiProvider | null
-    connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error'
+    connectionStatus: ConnectionStatus
     connectionError: string | null
     devices: Device[]
     machineState: MachineState | null
     selectedScale: Scale | null
     scaleSnapshot: ScaleSnapshot | null
     shotSettings: ShotSettings | null
-    waterLevels: { currentPercentage: number; warningThresholdPercentage: number } | null
+    waterLevels: WaterLevels | null
     
-    // WebSocket connections
     machineSnapshotConnection: WebSocketConnection | null
     scaleSnapshotConnection: WebSocketConnection | null
     shotSettingsConnection: WebSocketConnection | null
     waterLevelsConnection: WebSocketConnection | null
     
-    // R1 API methods
-    connectToApi: (url: string) => Promise<void>
+    connect: (url: string) => Promise<void>
     reconnect: () => Promise<void>
     fetchDevices: () => Promise<void>
     scanForDevices: () => Promise<void>
     fetchMachineState: () => Promise<void>
     setMachineState: (newState: MachineStateType) => Promise<void>
-    uploadProfile: (profile: Profile) => Promise<void>
+    uploadProfile: (profile: ExtendedProfile) => Promise<void>
     updateShotSettings: (settings: ShotSettings) => Promise<void>
     setUsbCharging: (enabled: boolean) => Promise<void>
     selectScale: (scaleId: string) => Promise<void>
     tareScale: () => Promise<void>
     
-    // State integration methods
-    syncR1StateToLegacyState: () => void
-    isUsingR1Api: () => boolean
-
-    // Connection management
     r1ConnectionAttempts: number;
     r1LastConnectionError: string | null;
     r1AutoReconnect: boolean;
@@ -103,494 +88,38 @@ interface DataStore {
     pauseR1AutoReconnect: () => void;
     resumeR1AutoReconnect: () => void;
     
-    // New function to load profiles from files
-    loadProfilesFromFiles: () => void;
-
-    // Scale functionality
+    loadProfilesFromFiles: () => void
     getScales: () => Promise<Scale[]>
-}
-
-function getDefaultProperties(): Properties {
-    return {
-        [Prop.WaterCapacity]: 1500,
-    }
-}
-
-type Stopwatch = ReturnType<typeof stopwatch>
-
-type TimedProp = Prop.EspressoTime | Prop.SteamTime | Prop.WaterTime | Prop.FlushTime
-
-const majorToTimedPropMap: Partial<Record<MajorState, TimedProp>> = {
-    [MajorState.Espresso]: Prop.EspressoTime,
-    [MajorState.Steam]: Prop.SteamTime,
-    [MajorState.HotWater]: Prop.WaterTime,
-    [MajorState.HotWaterRinse]: Prop.FlushTime,
-}
-
-// Initialize properties with default values for scale-related properties
-const initialProperties: Properties = {
-    [Prop.Weight]: 0,
-    [Prop.RecentEspressoMaxWeight]: 0,
-    [Prop.RecentEspressoMaxFlow]: 0,
-    [Prop.RecentEspressoMaxPressure]: 0,
-    [Prop.RecentEspressoTime]: 0,
-    // Add other default properties here...
-}
-
-// Helper function to safely get the API URL
-function getApiUrl(apiProvider: ApiProvider, fallbackUrl?: string): string {
-    // First try to use the provided fallback URL
-    if (fallbackUrl) return fallbackUrl;
-    
-    // Try to access baseUrl property safely using type assertion
-    const providerWithBaseUrl = apiProvider as any;
-    if (providerWithBaseUrl.baseUrl) return providerWithBaseUrl.baseUrl;
-    
-    // Get from connection settings
-    const store = useDataStore.getState();
-    const { hostname, port, useSecureProtocol } = store.r1ConnectionSettings;
-    const protocol = useSecureProtocol ? 'https' : 'http';
-    return `${protocol}://${hostname}:${port}`;
+    profileId: string | null
 }
 
 export const useDataStore = create<DataStore>((set, get) => {
-    let ctrl: WsController | undefined
     let lastConnectionUrl: string | null = null
-
-    // Setup state sync middleware to update legacy state when R1 state changes
-    const syncR1StateToLegacyState = () => {
-        const {
-            machineState,
-            scaleSnapshot,
-            shotSettings,
-            waterLevels,
-            connectionStatus
-        } = get();
-        
-        // Create properties object from R1 state
-        const newProperties = {
-            ...shotSettingsToProperties(shotSettings),
-            ...scaleSnapshotToProperties(scaleSnapshot),
-            ...machineStateToProperties(machineState),
-            ...waterLevelsToProperties(waterLevels)
-        };
-        
-        // Ensure we have a timestamp for UI updates
-        if (!newProperties[Prop.ShotSampleTime]) {
-            newProperties[Prop.ShotSampleTime] = Date.now();
-        }
-        
-        // Extract major and minor state to pass to setMachineStateProperties
-        const majorState = newProperties[Prop.MajorState] as MajorState || MajorState.Sleep;
-        const minorState = newProperties[Prop.MinorState] as MinorState || MinorState.NoState;
-        
-        // Update properties immediately
-        if (Object.keys(newProperties).length > 0) {
-            setProperties(newProperties as Properties);
-            
-            // Explicitly call setMachineStateProperties to ensure timer state is updated
-            // This is critical for the shot timer functionality
-            setMachineStateProperties(majorState, minorState);
-        }
-        
-        // Update remote state based on connection status
-        const newRemoteState = connectionStatusToRemoteState(connectionStatus);
-        if (Object.keys(newRemoteState).length > 0) {
-            setRemoteState(newRemoteState as RemoteState);
-        }
-    };
-    
-    // Determine if we're using R1 API
-    const isUsingR1Api = () => {
-        return get().apiProvider !== null;
-    };
-
-    function setProperties(properties: Properties) {
-        set((current) =>
-            produce(current, (next) => {
-                Object.assign(next.properties, properties)
-
-                /**
-                 * Set recent max pressure and flow for Espresso.
-                 */
-                void (() => {
-                    const { [Prop.MajorState]: previousMajorState } = current.properties
-
-                    const { [Prop.MinorState]: minorState, [Prop.MajorState]: majorState } =
-                        next.properties
-
-                    if (previousMajorState !== majorState && majorState === MajorState.Espresso) {
-                        /**
-                         * Going from any state to `Espresso` resets the recent max flow & pressure.
-                         */
-
-                        Object.assign(next.properties, {
-                            [Prop.RecentEspressoMaxFlow]: 0,
-                            [Prop.RecentEspressoMaxPressure]: 0,
-                            [Prop.RecentEspressoTime]: 0,
-                        })
-                    }
-
-                    // Define the active espresso substates where metrics should be tracked/displayed
-                    const activeEspressoSubstates = [MinorState.PreInfuse, MinorState.Pour];
-
-                    const isMaxTrackingState = majorState === MajorState.Espresso && 
-                                             typeof minorState !== 'undefined' &&
-                                             activeEspressoSubstates.includes(minorState);
-
-                    if (!isMaxTrackingState) {
-                        /**
-                         * We only collect recent extremes for Espresso during active pour/preinfuse.
-                         * Ignore everything else.
-                         */
-                        return
-                    }
-
-                    const {
-                        [Prop.RecentEspressoMaxFlow]: recentMaxFlow = 0,
-                        [Prop.RecentEspressoMaxPressure]: recentMaxPressure = 0,
-                    } = next.properties
-
-                    const { [Prop.ShotGroupPressure]: pressure, [Prop.ShotGroupFlow]: flow } =
-                        properties
-
-                    if (typeof flow !== 'undefined' && recentMaxFlow < flow) {
-                        next.properties[Prop.RecentEspressoMaxFlow] = flow
-                    }
-
-                    if (typeof pressure !== 'undefined' && recentMaxPressure < pressure) {
-                        next.properties[Prop.RecentEspressoMaxPressure] = pressure
-                    }
-                })()
-
-                /**
-                 * Set (or reset) displayed flow and displayed pressure props.
-                 */
-                void (() => {
-                    const {
-                        [Prop.ShotGroupPressure]: pressure,
-                        [Prop.ShotGroupFlow]: flow,
-                        [Prop.MinorState]: minorState,
-                        [Prop.MajorState]: majorState,
-                    } = next.properties
-
-                    // Define the active espresso substates where metrics should be tracked/displayed
-                    const activeEspressoSubstates = [MinorState.PreInfuse, MinorState.Pour];
-                    const isDisplayState = majorState === MajorState.Espresso && 
-                                           typeof minorState !== 'undefined' &&
-                                           activeEspressoSubstates.includes(minorState);
-
-                    if (typeof flow !== 'undefined') {
-                        next.properties[Prop.Flow] = isDisplayState ? flow : 0
-                    }
-
-                    if (typeof pressure !== 'undefined') {
-                        next.properties[Prop.Pressure] = isDisplayState ? pressure : 0
-                    }
-                })()
-            })
-        )
-    }
-
-    function setRemoteState(
-        remoteState: Partial<RemoteState>,
-        { onDeviceReady }: { onDeviceReady?: () => void } = {}
-    ) {
-        /**
-         * Readyness reporting.
-         */
-        void (() => {
-            const { deviceReady: previousDeviceReady } = get().remoteState
-
-            if (!previousDeviceReady && remoteState.deviceReady) {
-                onDeviceReady?.()
-            }
-        })()
-
-        set((current) => ({
-            remoteState: {
-                ...current.remoteState,
-                ...remoteState
-            }
-        }))
-    }
-
-    const timers: Record<TimedProp, Stopwatch | undefined> = {
-        [Prop.EspressoTime]: undefined,
-        [Prop.SteamTime]: undefined,
-        [Prop.WaterTime]: undefined,
-        [Prop.FlushTime]: undefined,
-    }
-
-    let recentTimer: Stopwatch | undefined
-
-    function engageTimerForState(majorState: MajorState, minorState: MinorState) {
-        // Determine if this is an active espresso state that should trigger the timer
-        const isActiveEspressoState = majorState === MajorState.Espresso && 
-            (minorState === MinorState.Pour || minorState === MinorState.PreInfuse);
-            
-        // Get the appropriate timer property for this machine state
-        const timedProp = isActiveEspressoState && majorState in majorToTimedPropMap
-            ? majorToTimedPropMap[majorState] 
-            : undefined;
-        
-        // Use safe accessing for non-flush timed prop
-        let npnflushTimedProp: TimedProp | undefined = undefined;
-        if (minorState !== MinorState.Flush && 
-            majorState !== undefined && 
-            majorState in majorToTimedPropMap) {
-            npnflushTimedProp = majorToTimedPropMap[majorState];
-        }
-
-        if (!timedProp) {
-            // If we're stopping an espresso timer, save the final shot time
-            const espressoTime = get().properties[Prop.EspressoTime];
-            if (recentTimer && 
-                majorState === MajorState.Espresso && 
-                typeof espressoTime === 'number' && 
-                espressoTime > 0) {
-                // Save the final shot time to be displayed after the shot ends
-                setProperties({ 
-                    [Prop.RecentEspressoTime]: espressoTime 
-                });
-            }
-            
-            recentTimer?.stop();
-            recentTimer = undefined;
-            
-            if (npnflushTimedProp) {
-                setProperties({ [npnflushTimedProp]: 0 });
-            }
-            
-            return;
-        }
-
-        const timer = timers[timedProp] || (timers[timedProp] = stopwatch())
-
-        if (timer === recentTimer) {
-            /**
-             * We're received a second hit for the same timer. Skip.
-             */
-            return
-        }
-
-        /**
-         * Timers are different at this point, we know. Stop the
-         * previous one and start the current one.
-         */
-        recentTimer?.stop()
-
-        /**
-         * And remeber the current one for the next round of states.
-         */
-        recentTimer = timer
-
-        /**
-         * Start the current timer and make it update associated
-         * timed prop.
-         */
-        timer.start({
-            onTick(t) {
-                setProperties({ [timedProp]: t })
-            },
-        })
-    }
-
-    function setMachineStateProperties(majorState: MajorState, minorState: MinorState) {
-        engageTimerForState(majorState, minorState)
-
-        setProperties({
-            [Prop.MajorState]: majorState,
-            [Prop.MinorState]: minorState,
-        })
-    }
-
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     
     // Scale data handling
-    let selectedScale: Scale | null = null
-    let scaleSnapshot: ScaleSnapshot | null = null
+    const selectedScale: Scale | null = null
+    const scaleSnapshot: ScaleSnapshot | null = null
 
     async function handleScaleData(scaleApi: ScaleApi, webSocketApi: WebSocketApi) {
         try {
-            // Get the initial scale if available
-            selectedScale = await scaleApi.getSelectedScale()
-            set({ selectedScale })
+            const initialSelectedScale = await scaleApi.getSelectedScale()
+            set({ selectedScale: initialSelectedScale })
 
-            // Setup scale snapshot subscription
             const wsConnection = webSocketApi.connectToScaleSnapshot()
             
             wsConnection.onMessage((data) => {
                 const snapshot = data as ScaleSnapshot
-                scaleSnapshot = snapshot
-                
-                // Update weight property
-                set(state => ({
-                    properties: {
-                        ...state.properties,
-                        [Prop.Weight]: snapshot.weight
-                    }
-                }))
-                
-                // When a shot completes, capture the final weight as max weight
-                const properties = get().properties;
-                const minorState = properties[Prop.MinorState] as MinorState;
-                if (minorState !== MinorState.Pour && minorState !== MinorState.PreInfuse) {
-                    set(state => ({
-                        properties: {
-                            ...state.properties,
-                            [Prop.RecentEspressoMaxWeight]: snapshot.weight
-                        }
-                    }))
-                }
+                set({ scaleSnapshot: snapshot })
             })
         } catch (error) {
             console.error('Failed to set up scale data handling:', error)
         }
     }
 
-    // Initialize properties
-    set({ properties: initialProperties })
-
     return {
-        wsState: WebSocketState.Closed,
-        remoteState: getDefaultRemoteState(),
-        properties: getDefaultProperties(),
-        syncR1StateToLegacyState,
-        isUsingR1Api,
-
-        // Legacy connection method
-        async connect(url, { onDeviceReady } = {}) {
-            // If R1 API is available, use it instead
-            if (import.meta.env.VITE_USE_R1_API === 'true') {
-                return await get().connectToApi(url);
-            }
-            
-            // Continue with legacy connection
-            ctrl?.discard()
-
-            set({ wsState: WebSocketState.Opening })
-
-            /**
-             * Let's give the opening state at least 1s of TTL so that in case of a network
-             * glitch we don't flash with a barely noticable "Opening…" in the UI.
-             */
-            await sleep()
-
-            try {
-                ctrl = wsStream(url as any)
-
-                while (true) {
-                    const chunk = await ctrl.read()
-
-                    if (!chunk) {
-                        /**
-                         * This should be impossible because we break this while
-                         * on `ws:close`. Either way, we can catch that outside.
-                         */
-                        throw new Error('Invalid chunk')
-                    }
-
-                    if (chunk.type === ChunkType.WebSocketClose) {
-                        break
-                    }
-
-                    if (chunk.type === ChunkType.WebSocketOpen) {
-                        set({ wsState: WebSocketState.Open })
-
-                        continue
-                    }
-
-                    if (chunk.type === ChunkType.WebSocketError) {
-                        throw chunk.payload
-                    }
-
-                    const { payload: data } = chunk
-
-                    if (isStateMessage(data)) {
-                        const remoteState = data.payload
-
-                        setRemoteState(remoteState, {
-                            onDeviceReady,
-                        })
-
-                        continue
-                    }
-
-                    if (isCharMessage(data)) {
-                        Object.entries(data.payload).forEach(([uuid, payload]) => {
-                            const buf = Buffer.from(payload, 'base64')
-
-                            switch (uuid) {
-                                case CharAddr.StateInfo:
-                                    return void setMachineStateProperties(
-                                        buf.readUint8(0),
-                                        buf.readUint8(1)
-                                    )
-                                case CharAddr.WaterLevels:
-                                    return void setProperties({
-                                        [Prop.WaterLevel]: avg(buf.readUint16BE() / 0x100 / 50, 7), // 0.00-1.00 (50mm tank)
-                                    })
-                                case CharAddr.Temperatures:
-                                    return void setProperties({
-                                        [Prop.WaterHeater]: buf.readUint16BE(0) / 0x100, // 1°C every 256
-                                        [Prop.SteamHeater]: buf.readUint16BE(2) / 0x100,
-                                        [Prop.GroupHeater]: buf.readUint16BE(4) / 0x100,
-                                        [Prop.ColdWater]: buf.readUint16BE(6) / 0x100,
-                                        [Prop.TargetWaterHeater]: buf.readUint16BE(8) / 0x100,
-                                        [Prop.TargetSteamHeater]: buf.readUint16BE(10) / 0x100,
-                                        [Prop.TargetGroupHeater]: buf.readUint16BE(12) / 0x100,
-                                        [Prop.TargetColdWater]: buf.readUint16BE(14) / 0x100,
-                                    })
-                                case CharAddr.ShotSample:
-                                    return void setProperties({
-                                        [Prop.ShotSampleTime]: buf.readUint16BE(0),
-                                        [Prop.ShotGroupPressure]: buf.readUInt16BE(2) / 0x1000,
-                                        [Prop.ShotGroupFlow]: buf.readUint16BE(4) / 0x1000,
-                                        [Prop.ShotMixTemp]: buf.readUint16BE(6) / 0x100,
-                                        [Prop.ShotHeadTemp]: (buf.readUint32BE(8) >> 8) / 0x10000,
-                                        [Prop.ShotSetMixTemp]: buf.readUint16BE(11) / 0x100,
-                                        [Prop.ShotSetHeadTemp]: buf.readUint16BE(13) / 0x100,
-                                        [Prop.ShotSetGroupPressure]: buf.readUint8(15) / 0x10,
-                                        [Prop.ShotSetGroupFlow]: buf.readUint8(16) / 0x10,
-                                        [Prop.ShotFrameNumber]: buf.readUint8(17),
-                                        [Prop.ShotSteamTemp]: buf.readUint8(18),
-                                    })
-                                case CharAddr.ShotSettings:
-                                    return void setProperties({
-                                        [Prop.SteamSettings]: buf.readUint8(0),
-                                        [Prop.TargetSteamTemp]: buf.readUint8(1),
-                                        [Prop.TargetSteamLength]: buf.readUint8(2),
-                                        [Prop.TargetHotWaterTemp]: buf.readUint8(3),
-                                        [Prop.TargetHotWaterVol]: buf.readUint8(4),
-                                        [Prop.TargetHotWaterLength]: buf.readUint8(5),
-                                        [Prop.TargetEspressoVol]: buf.readUint8(6),
-                                        [Prop.TargetGroupTemp]: buf.readUint16BE(7) / 0x100,
-                                    })
-                                case CharAddr.HeaderWrite:
-                                    return void console.log('HeaderWrite', decodeShotHeader(buf))
-                                case CharAddr.FrameWrite:
-                                    return void console.log('FrameWrite', decodeShotFrame(buf))
-                            }
-                        })
-
-                        continue
-                    }
-                }
-            } finally {
-                set({
-                    wsState: WebSocketState.Closed,
-                })
-
-                setProperties(getDefaultProperties())
-
-                setRemoteState(getDefaultRemoteState())
-
-                ctrl = undefined
-            }
-        },
-
-        // Legacy disconnect method
+        profiles: [],
+        profileId: null,
         disconnect() {
             // Clear any reconnect timer
             if (reconnectTimer) {
@@ -598,168 +127,48 @@ export const useDataStore = create<DataStore>((set, get) => {
                 reconnectTimer = null;
             }
             
-            if (get().isUsingR1Api()) {
-                const { 
-                    apiProvider,
-                    machineSnapshotConnection,
-                    scaleSnapshotConnection,
-                    shotSettingsConnection,
-                    waterLevelsConnection 
-                } = get();
-                
-                // Close all WebSocket connections
-                machineSnapshotConnection?.close();
-                scaleSnapshotConnection?.close();
-                shotSettingsConnection?.close();
-                waterLevelsConnection?.close();
-                
-                // Close all connections if using R1WebSocketAdapter
-                if (apiProvider && 'closeAll' in apiProvider.websocket) {
-                    (apiProvider.websocket as any).closeAll();
-                }
-                
-                // Reset connection state
-                set({
-                    connectionStatus: 'disconnected',
-                    connectionError: null,
-                    apiProvider: null,
-                    machineSnapshotConnection: null,
-                    scaleSnapshotConnection: null,
-                    shotSettingsConnection: null,
-                    waterLevelsConnection: null,
-                    // Reset legacy state for compatibility
-                    wsState: WebSocketState.Closed
-                });
-                
-                // Reset properties and remote state
-                setProperties(getDefaultProperties());
-                setRemoteState(getDefaultRemoteState());
-            } else {
-                // Legacy disconnect
-                ctrl?.discard();
-                ctrl = undefined;
-                
-                // Reset legacy state
-                set({
-                    wsState: WebSocketState.Closed
-                });
-                
-                setProperties(getDefaultProperties());
-                setRemoteState(getDefaultRemoteState());
+            const { 
+                apiProvider,
+                machineSnapshotConnection,
+                scaleSnapshotConnection,
+                shotSettingsConnection,
+                waterLevelsConnection 
+            } = get();
+            
+            // Close all WebSocket connections
+            machineSnapshotConnection?.close();
+            scaleSnapshotConnection?.close();
+            shotSettingsConnection?.close();
+            waterLevelsConnection?.close();
+            
+            // Close all connections if using R1WebSocketAdapter
+            if (apiProvider && 'closeAll' in apiProvider.websocket) {
+                (apiProvider.websocket as any).closeAll();
             }
+            
+            // Reset connection state
+            set({
+                connectionStatus: ConnectionStatus.Disconnected,
+                connectionError: null,
+                apiProvider: null,
+                machineSnapshotConnection: null,
+                scaleSnapshotConnection: null,
+                shotSettingsConnection: null,
+                waterLevelsConnection: null,
+                machineState: null,
+                selectedScale: null,
+                scaleSnapshot: null,
+                shotSettings: null,
+                waterLevels: null,
+                devices: [],
+                profileId: null
+            });
         },
-
-        profiles: [],
-
-        // Replace the old fetchProfiles with loadProfilesFromFiles
-        async loadProfilesFromFiles() {
-            try {
-                console.log('Starting to load profiles from files');
-                // Use the fetch API to get a list of all profiles from the public/profiles folder
-                const profileFileList = await fetch('/profiles-list.json')
-                    .then(response => {
-                        console.log('Profiles list response:', response.status, response.statusText);
-                        if (!response.ok) {
-                            console.log('Falling back to directory listing');
-                            // If profiles-list.json doesn't exist, get the list directly
-                            return fetch('/profiles/')
-                                .then(res => {
-                                    console.log('Directory listing response:', res.status, res.statusText);
-                                    return res.text();
-                                })
-                                .then(html => {
-                                    // Extract filenames from directory listing
-                                    const regex = /href="([^"]+\.json)"/g;
-                                    const matches = [...html.matchAll(regex)];
-                                    const filenames = matches.map(match => match[1]);
-                                    console.log('Extracted filenames from directory listing:', filenames.length, filenames.slice(0, 5));
-                                    return filenames;
-                                });
-                        }
-                        return response.json();
-                    });
-
-                console.log('Profile file list obtained:', Array.isArray(profileFileList), profileFileList ? profileFileList.length : 0);
-                
-                // Fetch each profile file and parse it
-                const profiles = await Promise.all(
-                    (Array.isArray(profileFileList) ? profileFileList : [])
-                        .map(async (filename) => {
-                            try {
-                                console.log(`Loading profile: ${filename}`);
-                                const profileData = await fetch(`/profiles/${filename}`)
-                                    .then(res => {
-                                        if (!res.ok) {
-                                            console.error(`Failed to fetch profile ${filename}:`, res.status, res.statusText);
-                                            return null;
-                                        }
-                                        return res.json();
-                                    });
-                                
-                                if (!profileData) return null;
-                                
-                                // Extract the ID from the filename (without .json)
-                                const id = filename.replace('.json', '');
-                                
-                                return {
-                                    id,
-                                    title: profileData.title || id,
-                                    ...profileData
-                                };
-                            } catch (error) {
-                                console.error(`Error loading profile ${filename}:`, error);
-                                return null;
-                            }
-                        })
-                );
-
-                // Filter out any failed loads and update the store
-                const validProfiles = profiles.filter(p => p !== null);
-                
-                console.log(`Successfully loaded ${validProfiles.length} profiles`, validProfiles.map(p => p.id).slice(0, 5));
-                
-                set({ profiles: validProfiles });
-                
-                // After profiles are loaded, check if we have a saved profile in localStorage
-                try {
-                    const { StorageKey } = await import('$/shared/types');
-                    const savedProfileId = localStorage.getItem(StorageKey.LastUsedProfile);
-                    
-                    if (savedProfileId) {
-                        console.log(`Found saved profile ID: ${savedProfileId}, restoring it`);
-                        
-                        // Check if the saved profile exists in the loaded profiles
-                        const profileExists = validProfiles.some(p => p.id === savedProfileId);
-                        
-                        if (profileExists) {
-                            // Update the profileId in the remoteState
-                            set(state => ({
-                                remoteState: {
-                                    ...state.remoteState,
-                                    profileId: savedProfileId
-                                }
-                            }));
-                            console.log(`Successfully restored profile ${savedProfileId} from previous session`);
-                        } else {
-                            console.warn(`Saved profile ${savedProfileId} not found in loaded profiles`);
-                        }
-                    }
-                } catch (e) {
-                    console.error('Error restoring saved profile:', e);
-                }
-            } catch (error) {
-                console.error('Error loading profiles from files:', error);
-            }
-        },
-
-        // Keep the old fetchProfiles for compatibility, but make it call loadProfilesFromFiles
         fetchProfiles() {
             get().loadProfilesFromFiles();
         },
-
-        // R1 API State
         apiProvider: null,
-        connectionStatus: 'disconnected',
+        connectionStatus: ConnectionStatus.Disconnected,
         connectionError: null,
         devices: [],
         machineState: null,
@@ -771,17 +180,58 @@ export const useDataStore = create<DataStore>((set, get) => {
         scaleSnapshotConnection: null,
         shotSettingsConnection: null,
         waterLevelsConnection: null,
-
-        // R1 API methods
-        async connectToApi(url) {
+        r1ConnectionAttempts: 0,
+        r1LastConnectionError: null,
+        r1AutoReconnect: true,
+        r1ConnectionSettings: {
+            hostname: 'localhost',
+            port: 8080,
+            useSecureProtocol: false
+        },
+        updateR1ConnectionSettings(settings) {
+            set(state => ({
+                r1ConnectionSettings: {
+                    ...state.r1ConnectionSettings,
+                    ...settings
+                }
+            }));
+            
+            // Force reconnect with new settings if we're already connected
+            if (get().connectionStatus === ConnectionStatus.Connected || get().connectionStatus === ConnectionStatus.Connecting) {
+                get().disconnect();
+                // Give a small delay before reconnecting
+                setTimeout(() => {
+                    if (get().r1AutoReconnect) {
+                        get().reconnect();
+                    }
+                }, 500);
+            }
+        },
+        pauseR1AutoReconnect() {
+            set({ r1AutoReconnect: false });
+            
+            // Clear any pending reconnect timer
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+        },
+        resumeR1AutoReconnect() {
+            set({ r1AutoReconnect: true });
+            
+            // If we're disconnected, try to reconnect immediately
+            if (get().connectionStatus === ConnectionStatus.Disconnected || get().connectionStatus === ConnectionStatus.Error) {
+                get().reconnect();
+            }
+        },
+        async connect(url) {
             lastConnectionUrl = url
 
             // Increment connection attempts
             set(state => ({ 
                 r1ConnectionAttempts: state.r1ConnectionAttempts + 1,
-                connectionStatus: 'connecting', 
+                connectionStatus: ConnectionStatus.Connecting, 
                 connectionError: null,
-                wsState: WebSocketState.Opening // Update legacy state for compatibility
             }));
             
             try {
@@ -827,18 +277,6 @@ export const useDataStore = create<DataStore>((set, get) => {
                         // Ensure onMessage and onError methods exist before using them
                         if (connection && typeof connection.onMessage === 'function') {
                             connection.onMessage(onData);
-                            
-                            // Ensure UI components re-render with new data after data updates
-                            const originalOnData = onData;
-                            connection.onMessage = (data: any) => {
-                                originalOnData(data);
-                                
-                                // Sync state after each message
-                                setTimeout(() => {
-                                    const stateStore = get();
-                                    stateStore.syncR1StateToLegacyState();
-                                }, 0);
-                            };
                         }
                         
                         if (connection && typeof connection.onError === 'function') {
@@ -862,11 +300,6 @@ export const useDataStore = create<DataStore>((set, get) => {
                         'machine snapshot',
                         (data) => {
                             set({ machineState: data });
-                            // Update Pressure and Flow in legacy properties
-                            setProperties({
-                                [Prop.Pressure]: data.pressure,
-                                [Prop.Flow]: data.flow
-                            });
                         }
                     );
                     
@@ -876,10 +309,6 @@ export const useDataStore = create<DataStore>((set, get) => {
                         'scale snapshot',
                         (data) => {
                             set({ scaleSnapshot: data });
-                            // Update Weight in legacy properties
-                            setProperties({
-                                [Prop.Weight]: data.weight
-                            });
                         }
                     );
                     
@@ -899,18 +328,16 @@ export const useDataStore = create<DataStore>((set, get) => {
                     
                     // Update state with connections
                     set({
-                        connectionStatus: 'connected',
+                        machineSnapshotConnection,
+                        scaleSnapshotConnection,
+                        shotSettingsConnection,
+                        waterLevelsConnection,
+                        connectionStatus: ConnectionStatus.Connected,
                         connectionError: null,
                         r1ConnectionAttempts: 0,
                         r1LastConnectionError: null,
-                        wsState: WebSocketState.Open // Update legacy state for compatibility
                     });
                     
-                    // Update remote state for compatibility
-                    setRemoteState({ deviceReady: true });
-                    
-                    // Perform initial sync of R1 state to legacy state
-                    get().syncR1StateToLegacyState();
                 } catch (error) {
                     console.error('Failed to connect to API:', error);
                     
@@ -921,14 +348,10 @@ export const useDataStore = create<DataStore>((set, get) => {
                     
                     // Update store with error state
                     set({ 
-                        connectionStatus: 'error',
+                        connectionStatus: ConnectionStatus.Error,
                         connectionError: errorMessage,
                         r1LastConnectionError: errorMessage,
-                        wsState: WebSocketState.Closed // Update legacy state for compatibility
                     });
-                    
-                    // Reset remote state on error
-                    setRemoteState(getDefaultRemoteState());
                     
                     // Setup automatic reconnection if enabled
                     if (get().r1AutoReconnect) {
@@ -964,14 +387,10 @@ export const useDataStore = create<DataStore>((set, get) => {
                 
                 // Update store with error state
                 set({ 
-                    connectionStatus: 'error',
+                    connectionStatus: ConnectionStatus.Error,
                     connectionError: errorMessage,
                     r1LastConnectionError: errorMessage,
-                    wsState: WebSocketState.Closed // Update legacy state for compatibility
                 });
-                
-                // Reset remote state on error
-                setRemoteState(getDefaultRemoteState());
                 
                 // Setup automatic reconnection if enabled
                 if (get().r1AutoReconnect) {
@@ -998,42 +417,35 @@ export const useDataStore = create<DataStore>((set, get) => {
                 }
             }
         },
-        
         async reconnect() {
             if (lastConnectionUrl) {
                 try {
-                    // If using R1 API, connect through the API
-                    if (get().isUsingR1Api()) {
-                        // Check if we should upgrade to secure protocol based on previous errors
-                        const { r1LastConnectionError, r1ConnectionSettings } = get();
+                    // Check if we should upgrade to secure protocol based on previous errors
+                    const { r1LastConnectionError, r1ConnectionSettings } = get();
+                    
+                    // If we previously had certificate errors, try switching protocols
+                    if (r1LastConnectionError && 
+                        (r1LastConnectionError.includes('certificate') || 
+                         r1LastConnectionError.includes('SSL'))) {
                         
-                        // If we previously had certificate errors, try switching protocols
-                        if (r1LastConnectionError && 
-                            (r1LastConnectionError.includes('certificate') || 
-                             r1LastConnectionError.includes('SSL'))) {
-                            
-                            // Toggle the secure protocol setting
-                            get().updateR1ConnectionSettings({
-                                useSecureProtocol: !r1ConnectionSettings.useSecureProtocol
-                            });
-                            
-                            // The connection will be attempted with new settings by updateR1ConnectionSettings
-                            return;
-                        }
+                        // Toggle the secure protocol setting
+                        get().updateR1ConnectionSettings({
+                            useSecureProtocol: !r1ConnectionSettings.useSecureProtocol
+                        });
                         
-                        // Construct URL using current settings
-                        const { hostname, port, useSecureProtocol } = get().r1ConnectionSettings;
-                        const protocol = useSecureProtocol ? 'https' : 'http';
-                        const fullUrl = `${protocol}://${hostname}:${port}`;
-                        
-                        await get().connectToApi(fullUrl);
-                    } else {
-                        // Otherwise use legacy connection
-                        await get().connect(lastConnectionUrl);
+                        // The connection will be attempted with new settings by updateR1ConnectionSettings
+                        return;
                     }
+                    
+                    // Construct URL using current settings
+                    const { hostname, port, useSecureProtocol } = get().r1ConnectionSettings;
+                    const protocol = useSecureProtocol ? 'https' : 'http';
+                    const fullUrl = `${protocol}://${hostname}:${port}`;
+                    
+                    await get().connect(fullUrl);
                 } catch (error) {
                     console.error('Error during reconnect:', error);
-                    // We don't need to update state here as connectToApi/connect will handle that
+                    // We don't need to update state here as connect will handle that
                 }
             } else {
                 console.error('Cannot reconnect - no previous connection URL');
@@ -1043,8 +455,6 @@ export const useDataStore = create<DataStore>((set, get) => {
                 });
             }
         },
-        
-        // R1 API Device methods
         async fetchDevices() {
             const { apiProvider } = get()
             if (!apiProvider) return
@@ -1056,7 +466,6 @@ export const useDataStore = create<DataStore>((set, get) => {
                 console.error('Error fetching devices:', error)
             }
         },
-        
         async scanForDevices() {
             const { apiProvider } = get()
             if (!apiProvider) return
@@ -1090,8 +499,6 @@ export const useDataStore = create<DataStore>((set, get) => {
                 console.error('Error scanning for devices:', error)
             }
         },
-        
-        // R1 API Machine methods
         async fetchMachineState() {
             const { apiProvider } = get()
             if (!apiProvider) return
@@ -1099,14 +506,10 @@ export const useDataStore = create<DataStore>((set, get) => {
             try {
                 const machineState = await apiProvider.machine.getState()
                 set({ machineState })
-                
-                // Sync with legacy state after update
-                get().syncR1StateToLegacyState()
             } catch (error) {
                 console.error('Error fetching machine state:', error)
             }
         },
-        
         async setMachineState(state) {
             const { apiProvider } = get()
             if (!apiProvider) return
@@ -1118,32 +521,22 @@ export const useDataStore = create<DataStore>((set, get) => {
                 console.error('Error setting machine state:', error)
             }
         },
-        
-        async uploadProfile(profile) {
+        async uploadProfile(profile: ExtendedProfile) {
             const { apiProvider } = get()
-            if (!apiProvider) return
+            if (!apiProvider || !apiProvider.machine) return
             
             try {
-                if (!apiProvider.machine) return;
+                // Need to cast to handle the extended profile type
+                await apiProvider.machine.uploadProfile(profile as any);
                 
-                // Convert profile to match the required API format
-                const convertedProfile = {
-                    ...profile,
-                    version: String(profile.version),
-                    // Transform TeaPortafilter to a compatible value
-                    beverage_type: profile.beverage_type === 'tea_portafilter' ? 'tea' : profile.beverage_type
-                };
-                
-                // Use type assertion to handle the incompatible types
-                await apiProvider.machine.uploadProfile(convertedProfile as any);
-                
-                // Refresh the profile list
-                get().fetchProfiles(apiProvider.machine as any);
+                // If we successfully uploaded the profile, update the store
+                if (profile.id) {
+                    set({ profileId: profile.id });
+                }
             } catch (error) {
                 console.error('Failed to upload profile:', error);
             }
         },
-        
         async updateShotSettings(settings) {
             const { apiProvider } = get()
             if (!apiProvider) return
@@ -1154,7 +547,6 @@ export const useDataStore = create<DataStore>((set, get) => {
                 console.error('Error updating shot settings:', error)
             }
         },
-        
         async setUsbCharging(enabled) {
             const { apiProvider } = get()
             if (!apiProvider) return
@@ -1165,8 +557,6 @@ export const useDataStore = create<DataStore>((set, get) => {
                 console.error('Error setting USB charging:', error)
             }
         },
-        
-        // R1 API Scale methods
         async selectScale(scaleId: string) {
             const { apiProvider } = get();
             if (!apiProvider) {
@@ -1182,7 +572,6 @@ export const useDataStore = create<DataStore>((set, get) => {
             console.log('Updated selected scale state:', updatedScale);
             set({ selectedScale: updatedScale });
         },
-        
         async tareScale() {
             const { apiProvider } = get()
             if (!apiProvider) return
@@ -1193,58 +582,104 @@ export const useDataStore = create<DataStore>((set, get) => {
                 console.error('Error taring scale:', error)
             }
         },
-
-        // R1 connection monitoring
-        r1ConnectionAttempts: 0,
-        r1LastConnectionError: null,
-        r1AutoReconnect: true,
-        r1ConnectionSettings: {
-            hostname: 'localhost',
-            port: 8080,
-            useSecureProtocol: false
-        },
-        
-        // New methods for connection management
-        updateR1ConnectionSettings(settings) {
-            set(state => ({
-                r1ConnectionSettings: {
-                    ...state.r1ConnectionSettings,
-                    ...settings
-                }
-            }));
-            
-            // Force reconnect with new settings if we're already connected
-            if (get().connectionStatus === 'connected' || get().connectionStatus === 'connecting') {
-                get().disconnect();
-                // Give a small delay before reconnecting
-                setTimeout(() => {
-                    if (get().r1AutoReconnect) {
-                        get().reconnect();
+        async loadProfilesFromFiles() {
+            try {
+                const profiles: Profile[] = [];
+                
+                // First try to load from localStorage for user customizations
+                const savedProfiles = localStorage.getItem('profiles');
+                if (savedProfiles) {
+                    try {
+                        const parsed = JSON.parse(savedProfiles);
+                        if (Array.isArray(parsed)) {
+                            profiles.push(...parsed);
+                            console.log('Loaded', parsed.length, 'profiles from localStorage');
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse saved profiles', e);
                     }
-                }, 500);
-            }
-        },
-        
-        pauseR1AutoReconnect() {
-            set({ r1AutoReconnect: false });
-            
-            // Clear any pending reconnect timer
-            if (reconnectTimer) {
-                clearTimeout(reconnectTimer);
-                reconnectTimer = null;
-            }
-        },
-        
-        resumeR1AutoReconnect() {
-            set({ r1AutoReconnect: true });
-            
-            // If we're disconnected, try to reconnect immediately
-            if (get().connectionStatus === 'disconnected' || get().connectionStatus === 'error') {
-                get().reconnect();
-            }
-        },
+                }
+                
+                // Load profiles from profiles-list.json
+                try {
+                    // Add cache busting to prevent 304 responses
+                    const timestamp = new Date().getTime();
+                    const response = await fetch(`/profiles-list.json?_=${timestamp}`, {
+                        headers: {
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache',
+                            'Expires': '0'
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch profiles list: ${response.status}`);
+                    }
+                    
+                    // Directly use the parsed array from the response
+                    const profilesList: string[] = await response.json(); 
+                    
+                    // Check if the response is actually an array
+                    if (!Array.isArray(profilesList)) {
+                        throw new Error('Invalid profiles list format: Expected an array of filenames.');
+                    }
+                    
+                    console.log('Found', profilesList.length, 'profiles in profiles-list.json');
+                    
+                    // Load each profile file using the array directly
+                    const profilePromises = profilesList.map((profileFile: string) => 
+                        fetch(`/profiles/${profileFile}`)
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error(`Failed to fetch profile: ${profileFile}`);
+                                }
+                                return response.json();
+                            })
+                            .then(profileData => {
+                                // Ensure the profile has an ID
+                                if (!profileData.id && profileFile.endsWith('.json')) {
+                                    profileData.id = profileFile.slice(0, -5); // Remove .json
+                                }
+                                return profileData as Profile;
+                            })
+                            .catch(err => {
+                                console.error(`Error loading profile ${profileFile}:`, err);
+                                return null;
+                            })
+                    );
+                    
+                    const loadedProfiles = await Promise.all(profilePromises);
+                    const validProfiles = loadedProfiles.filter(Boolean) as Profile[];
+                    
+                    // Add to existing profiles
+                    profiles.push(...validProfiles);
+                    console.log('Loaded', validProfiles.length, 'profiles from profile files');
+                    
+                    // Update state with all loaded profiles
+                    set({ profiles });
+                    
+                    // Update current profile if previously saved
+                    const savedProfileId = localStorage.getItem(StorageKey.LastUsedProfile);
+                    const hasValidSavedProfile = savedProfileId && profiles.some(p => p?.id === savedProfileId);
 
-        // Scale functionality
+                    if (hasValidSavedProfile && savedProfileId) {
+                        set({ profileId: savedProfileId });
+                        console.log('Restored last used profile:', savedProfileId);
+                    } else if (profiles.length > 0) {
+                        // Find the first profile with a valid ID
+                        const firstValidProfile = profiles.find(p => p && typeof p.id === 'string');
+                        if (firstValidProfile && firstValidProfile.id) {
+                            set({ profileId: firstValidProfile.id });
+                            console.log('Set default profile:', firstValidProfile.id);
+                        }
+                    }
+                } catch (e) {
+                    console.error('Failed to load profiles from profiles-list.json:', e);
+                }
+            } catch (error) {
+                console.error('Failed to load profiles:', error);
+            }
+        },
         getScales: async function() {
             const { apiProvider } = get();
             if (!apiProvider) {
@@ -1262,43 +697,30 @@ export const useDataStore = create<DataStore>((set, get) => {
                 console.error('DataStore: Failed to get scales via apiProvider:', error);
                 return [];
             }
-        },
+        }
     }
 })
 
-// Legacy hooks that work with both legacy and R1 state
+// Update legacy hooks to use R1 state
 export function useIsOn() {
-    const { [Prop.MajorState]: majorState = 0 } = useDataStore().properties
-    return majorState !== 0
+    const machineState = useDataStore(state => state.machineState)
+    return isMachineOn(machineState)
 }
 
 export function useStatus() {
-    const { wsState, remoteState, connectionStatus } = useDataStore()
+    const { connectionStatus } = useDataStore()
     
-    // First check if we're using R1 API
-    if (useDataStore().isUsingR1Api()) {
-        if (connectionStatus === 'connected') {
-            return Status.On
-        } else if (connectionStatus === 'connecting') {
-            return Status.Busy
-        }
-        return Status.Off
-    }
-    
-    // Legacy status logic
-    if (wsState === WebSocketState.Closed) {
-        return Status.Off
-    }
-
-    if (remoteState.deviceReady) {
+    // Always use R1 API status logic
+    if (connectionStatus === ConnectionStatus.Connected) {
         return Status.On
+    } else if (connectionStatus === ConnectionStatus.Connecting) {
+        return Status.Busy
     }
-
-    return Status.Busy
+    return Status.Off
 }
 
 export function useScaleStatus() {
-    const { selectedScale, isUsingR1Api } = useDataStore()
+    const { selectedScale } = useDataStore()
     
     // If there's no scale selected, return off status
     if (!selectedScale) {
@@ -1321,30 +743,64 @@ function clearReffedTimeoutId(ref: MutableRefObject<number | undefined>) {
     }
 }
 
+/**
+ * Hook to check if the R1 API is available at the specified URL
+ */
+export function useR1Availability() {
+    const { r1ConnectionSettings } = useDataStore();
+    const [isAvailable, setIsAvailable] = useState(false);
+    
+    const { hostname, port, useSecureProtocol } = r1ConnectionSettings;
+    const protocol = useSecureProtocol ? 'https' : 'http';
+    const serverUrl = `${protocol}://${hostname}:${port}`;
+    
+    useEffect(() => {
+        const checkAvailability = async () => {
+            try {
+                // Use a simple HEAD request to check if R1 is responding
+                await fetch(`${serverUrl}/api/v1/devices`, { 
+                    method: 'HEAD',
+                    // Short timeout to avoid long waits
+                    signal: AbortSignal.timeout(1500)
+                });
+                setIsAvailable(true);
+            } catch (e) {
+                setIsAvailable(false);
+            }
+        };
+        
+        checkAvailability();
+        
+        // Periodic check for availability
+        const interval = setInterval(checkAvailability, 10000);
+        return () => clearInterval(interval);
+    }, [serverUrl]);
+    
+    return isAvailable;
+}
+
 export function useAutoConnectEffect() {
     const { 
-        disconnect, connectToApi, 
-        r1ConnectionSettings, connectionStatus,
-        fetchMachineState, isUsingR1Api
+        r1ConnectionSettings, 
+        connectionStatus,
+        connect, 
+        disconnect,
     } = useDataStore();
-    const { machineMode, setMachineMode } = useUiStore();
-    const machineModeRef = useRef(machineMode);
-    const isR1Available = useR1Availability();
     
-    // Track previous connection status to detect actual connection events
+    const isR1Available = useR1Availability();
+    const { machineMode } = useUiStore();
+    const machineModeRef = useRef(machineMode);
+    machineModeRef.current = machineMode;
+    
     const prevConnectionStatusRef = useRef(connectionStatus);
-
-    if (machineModeRef.current !== machineMode) {
-        machineModeRef.current = machineMode;
-    }
-
+    const { setMachineMode } = useUiStore();
     const timeoutIdRef = useRef<number | undefined>(undefined);
     useEffect(() => void clearReffedTimeoutId(timeoutIdRef), [machineMode]);
     
-    // Get R1 server URL with appropriate protocol
-    const r1Url = useServerUrl({ 
-        protocol: r1ConnectionSettings.useSecureProtocol ? 'https' : 'http'
-    });
+    // Build R1 server URL with appropriate protocol
+    const { hostname, port, useSecureProtocol } = r1ConnectionSettings;
+    const protocol = useSecureProtocol ? 'https' : 'http';
+    const r1Url = `${protocol}://${hostname}:${port}`;
 
     // Function to switch to Espresso tab after connection
     const switchToEspressoTab = useCallback(() => {
@@ -1363,24 +819,18 @@ export function useAutoConnectEffect() {
             console.log('Connection established, fetching fresh machine data');
             
             // Fetch fresh machine state to update UI
-            await fetchMachineState();
-            
-            // Force state synchronization
-            if (isUsingR1Api()) {
-                console.log('Syncing R1 state to legacy state');
-                useDataStore.getState().syncR1StateToLegacyState();
-            }
+            await useDataStore.getState().fetchMachineState();
             
             console.log('Machine data refresh completed');
         } catch (error) {
             console.error('Error refreshing machine data:', error);
         }
-    }, [fetchMachineState, isUsingR1Api]);
+    }, []);
 
     // Effect to monitor connection status changes and update UI when connected
     useEffect(() => {
         // Only trigger actions when we transition from a non-connected to connected state
-        if (connectionStatus === 'connected' && prevConnectionStatusRef.current !== 'connected') {
+        if (connectionStatus === ConnectionStatus.Connected && prevConnectionStatusRef.current !== ConnectionStatus.Connected) {
             console.log('Connection established, updating UI');
             
             // First refresh the data to ensure we have the latest values
@@ -1403,7 +853,7 @@ export function useAutoConnectEffect() {
 
             try {
                 // Connect using R1 API
-                await connectToApi(r1Url);
+                await connect(r1Url);
                 
                 // Note: We don't need to manually switch the tab here anymore
                 // The connection status change effect will handle it
@@ -1418,110 +868,58 @@ export function useAutoConnectEffect() {
             disconnect();
         };
     }, [
-        disconnect, connectToApi, 
+        disconnect, connect, 
         r1Url, isR1Available
     ]);
 }
 
-// These hooks work the same for both legacy and R1 state
-export function usePropValue(prop: Prop) {
-    return useDataStore().properties[prop]
-}
-
+// Replace legacy property-based hooks with R1 state-based hooks
 export function useMajorState() {
-    return usePropValue(Prop.MajorState)
+    const machineState = useDataStore(state => state.machineState)
+    return getMajorState(machineState)
 }
 
 export function useMinorState() {
-    return usePropValue(Prop.MinorState)
+    const machineState = useDataStore(state => state.machineState)
+    return getMinorState(machineState)
 }
 
 export function useWaterLevel() {
-    return usePropValue(Prop.WaterLevel)
+    const waterLevels = useDataStore(state => state.waterLevels)
+    return waterLevels?.currentPercentage ?? 0
 }
 
 export function usePhase() {
-    switch (useConnectionPhase()) {
-        case ConnectionPhase.BluetoothOff:
-            return 'Bluetooth is off'
+    const phase = useConnectionPhase();
+    
+    switch (phase) {
         case ConnectionPhase.ConnectingAdapters:
-            return 'Connecting to DE1…'
-        case ConnectionPhase.NoBluetooth:
-            return 'Bluetooth is unavailable'
-        case ConnectionPhase.Opening:
-            return 'Opening…'
-        case ConnectionPhase.Scanning:
-            return 'Looking for DE1…'
-        case ConnectionPhase.SettingUp:
-            return 'Setting up…'
+            return 'Connecting to DE1…';
         case ConnectionPhase.WaitingToReconnect:
-            return 'Reconnecting shortly…'
+            return 'Reconnecting shortly…';
         case ConnectionPhase.Irrelevant:
         default:
+            return undefined;
     }
 }
 
 export function useConnectionPhase() {
-    const { wsState, remoteState, connectionStatus, isUsingR1Api } = useDataStore()
-    const status = useStatus()
+    const { connectionStatus } = useDataStore()
     
-    // R1 API connection phase
-    if (isUsingR1Api()) {
-        if (connectionStatus === 'connecting') {
-            return ConnectionPhase.ConnectingAdapters
-        }
-        
-        if (connectionStatus === 'error') {
-            return ConnectionPhase.WaitingToReconnect
-        }
-        
-        if (connectionStatus === 'disconnected') {
-            return ConnectionPhase.Irrelevant
-        }
-        
-        return ConnectionPhase.Irrelevant
-    }
-    
-    // Legacy connection phase
-    if (wsState === WebSocketState.Closed) {
-        return ConnectionPhase.WaitingToReconnect
-    }
-
-    if (status !== Status.Busy) {
-        return ConnectionPhase.Irrelevant
-    }
-
-    if (wsState === WebSocketState.Opening) {
-        return ConnectionPhase.Opening
-    }
-
-    if (remoteState.scanning) {
-        return ConnectionPhase.Scanning
-    }
-
-    if (remoteState.connecting) {
+    if (connectionStatus === ConnectionStatus.Connecting) {
         return ConnectionPhase.ConnectingAdapters
     }
-
-    if (remoteState.discoveringCharacteristics) {
-        return ConnectionPhase.SettingUp
+    
+    if (connectionStatus === ConnectionStatus.Error) {
+        return ConnectionPhase.WaitingToReconnect
     }
-
-    if (remoteState.bluetoothState === BluetoothState.PoweredOff) {
-        return ConnectionPhase.BluetoothOff
-    }
-
-    if (remoteState.bluetoothState !== BluetoothState.PoweredOn) {
-        return ConnectionPhase.NoBluetooth
-    }
+    
+    // For 'connected' or 'disconnected', it's considered irrelevant for this phase display
+    return ConnectionPhase.Irrelevant
 }
 
 export function useCurrentProfileLabel() {
-    const {
-        profiles,
-        remoteState: { profileId },
-    } = useDataStore()
-
+    const { profiles, profileId } = useDataStore()
     return useMemo(() => profiles.find(({ id }) => id === profileId)?.title, [profiles, profileId])
 }
 
@@ -1534,7 +932,7 @@ function createApiProvider(url: string): ApiProvider {
     return new R1ApiProvider(url)
 }
 
-// New R1-specific hooks for direct access to R1 state
+// R1-specific hooks for direct access to R1 state
 export function useMachineState() {
     return useDataStore(state => state.machineState)
 }
@@ -1558,7 +956,7 @@ export function useConnectionStatus() {
     }))
 }
 
-// Add new R1 connection management hooks
+// R1 connection management hooks
 export function useR1ConnectionStatus() {
     return useDataStore(state => ({
         status: state.connectionStatus,
@@ -1582,4 +980,19 @@ export function useR1ConnectionControls() {
         reconnect,
         disconnect
     };
+}
+
+function getApiUrl(apiProvider: ApiProvider, fallbackUrl?: string): string {
+    // First try to use the provided fallback URL
+    if (fallbackUrl) return fallbackUrl;
+    
+    // Try to access baseUrl property safely using type assertion
+    const providerWithBaseUrl = apiProvider as any;
+    if (providerWithBaseUrl.baseUrl) return providerWithBaseUrl.baseUrl;
+    
+    // Get from connection settings
+    const store = useDataStore.getState();
+    const { hostname, port, useSecureProtocol } = store.r1ConnectionSettings;
+    const protocol = useSecureProtocol ? 'https' : 'http';
+    return `${protocol}://${hostname}:${port}`;
 }

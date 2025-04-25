@@ -583,12 +583,7 @@ export interface ShotSettings {
 export enum ConnectionPhase {
     Irrelevant = 1000,
     WaitingToReconnect,
-    Opening,
-    Scanning,
     ConnectingAdapters,
-    SettingUp,
-    BluetoothOff,
-    NoBluetooth,
 }
 
 export enum Period {

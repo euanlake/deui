@@ -1,12 +1,12 @@
-import { Prop } from '$/shared/types'
 import React from 'react'
 import tw from 'twin.macro'
-import { useDataStore } from '$/stores/data'
+import { useWaterLevel } from '$/stores/data'
 import { css } from '@emotion/react'
 
 export default function WaterBar() {
-    const { [Prop.WaterCapacity]: waterCapacity = 1500, [Prop.WaterLevel]: waterLevel = 0 } =
-        useDataStore().properties
+    const waterLevel = useWaterLevel() / 100 // Convert percentage to 0-1 range
+    // Use a fixed capacity value since water levels API doesn't provide it
+    const waterCapacity = 1500
 
     return (
         <div

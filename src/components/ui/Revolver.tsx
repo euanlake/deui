@@ -1,8 +1,8 @@
-import { usePropValue, useStatus } from '$/stores/data'
-import { MachineMode, MajorState, Prop } from '$/shared/types'
+import React, { ButtonHTMLAttributes, useEffect, useState } from 'react'
+import { useStatus, useMachineState } from '$/stores/data'
+import { MachineMode } from '$/shared/types'
 import { css } from '@emotion/react'
 import { useSwipeable } from 'react-swipeable'
-import { ButtonHTMLAttributes, useEffect, useState } from 'react'
 import tw from 'twin.macro'
 import { machineModeLineup, useUiStore } from '$/stores/ui'
 import SubstateSwitch from '../SubstateSwitch'
@@ -107,30 +107,34 @@ export default function Revolver() {
         })
     }, [machineMode])
 
-    const majorState = usePropValue(Prop.MajorState)
+    const machineState = useMachineState()
 
     useEffect(() => {
-        const newMode =
-            typeof majorState === 'undefined'
-                ? void 0
-                : {
-                      [MajorState.Steam]: MachineMode.Steam,
-                      [MajorState.HotWater]: MachineMode.Water,
-                      [MajorState.HotWaterRinse]: MachineMode.Flush,
-                      [MajorState.Espresso]: MachineMode.Espresso,
-                  }[majorState]
-
-        if (!newMode) {
-            /**
-             * Stay in the current machine mode if the new mode has not been
-             * recognized. Usually it means that we've finished doing something
-             * and we're in "idle" mode.
-             */
-            return
+        if (!machineState) return;
+        
+        // Map the machine state to appropriate machine mode
+        let newMode: MachineMode | undefined;
+        
+        switch(machineState.state) {
+            case 'steam':
+                newMode = MachineMode.Steam;
+                break;
+            case 'hotwater':
+                newMode = MachineMode.Water;
+                break;
+            case 'flush':
+                newMode = MachineMode.Flush;
+                break;
+            case 'espresso':
+                newMode = MachineMode.Espresso;
+                break;
+            default:
+                // For idle, sleep, or other states, don't change the mode
+                return;
         }
 
-        setMachineMode(newMode)
-    }, [majorState, setMachineMode])
+        setMachineMode(newMode);
+    }, [machineState, setMachineMode])
 
     return (
         <div

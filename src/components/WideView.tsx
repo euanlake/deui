@@ -20,7 +20,8 @@ const settingsDrawer = toaster(SettingsDrawer, Layer.Drawer)
 const scaleSelectDrawer = toaster(ScaleSelectDrawer, Layer.Drawer)
 
 export default function WideView(props: HTMLAttributes<HTMLDivElement>) {
-    const { [Prop.WaterCapacity]: waterCapacity = 0 } = useDataStore().properties
+    // Use a fixed water capacity value (same as in WaterBar)
+    const waterCapacity = 1500
     const { getScales, selectedScale, selectScale, scanForDevices } = useDataStore()
     const [isScaleDrawerOpen, setIsScaleDrawerOpen] = useState(false)
     const scaleStatus = useScaleStatus()

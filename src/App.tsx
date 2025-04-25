@@ -10,7 +10,6 @@ import { Layer } from '$/shared/types'
 import { useUiStore } from '$/stores/ui'
 import { useAutoConnectEffect, useDataStore } from '$/stores/data'
 import Debug from '$/components/Debug'
-import { useServerUrl } from './hooks'
 
 const App = () => {
     const { theme } = useUiStore()
