@@ -5,8 +5,9 @@ export class MockScaleAdapter implements ScaleApi {
   private selectedScale: Scale | null = {
     id: 'mock-scale',
     name: 'Mock Decent Scale',
-    type: 'decent_scale',
-    connected: true
+    type: 'scale',
+    connectionState: 'connected',
+    batteryLevel: 100
   };
   
   async tare(): Promise<void> {
@@ -17,6 +18,25 @@ export class MockScaleAdapter implements ScaleApi {
     return this.selectedScale;
   }
   
+  async getScales(): Promise<Scale[]> {
+    return [
+      {
+        id: 'mock-scale',
+        name: 'Mock Decent Scale',
+        type: 'scale',
+        connectionState: 'connected',
+        batteryLevel: 100
+      },
+      {
+        id: 'mock-scale-2',
+        name: 'Mock Felicita Arc Scale',
+        type: 'scale',
+        connectionState: 'connected',
+        batteryLevel: 90
+      }
+    ];
+  }
+  
   async selectScale(scaleId: string): Promise<void> {
     console.log(`Mock selecting scale with ID: ${scaleId}`);
     
@@ -24,15 +44,17 @@ export class MockScaleAdapter implements ScaleApi {
       this.selectedScale = {
         id: 'mock-scale',
         name: 'Mock Decent Scale',
-        type: 'decent_scale',
-        connected: true
+        type: 'scale',
+        connectionState: 'connected',
+        batteryLevel: 100
       };
     } else if (scaleId === 'mock-scale-2') {
       this.selectedScale = {
         id: 'mock-scale-2',
         name: 'Mock Felicita Arc Scale',
-        type: 'felicita_arc',
-        connected: true
+        type: 'scale',
+        connectionState: 'connected',
+        batteryLevel: 90
       };
     } else {
       throw new Error(`Scale with ID ${scaleId} not found`);
