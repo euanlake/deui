@@ -5,7 +5,8 @@ import {
     ConnectionPhase,
     MachineMode,
     BeverageType,
-    StorageKey
+    StorageKey,
+    Prop
 } from '$/shared/types'
 import { produce } from 'immer'
 import { MutableRefObject, useEffect, useMemo, useRef, useCallback, useState } from 'react'
@@ -39,6 +40,11 @@ import {
     getMinorState
 } from '../shared/r1models'
 
+// Timer related state
+let shotTimerInterval: ReturnType<typeof setInterval> | null = null;
+let shotStartTime: number | null = null;
+let shotElapsedTime = 0;
+
 // Type augmentation to allow 'tea_portafilter'
 type ExtendedProfile = Omit<Profile, 'beverage_type'> & {
     beverage_type: string | BeverageType; // Allow any string for compatibility with legacy profiles
@@ -63,6 +69,12 @@ interface DataStore {
     scaleSnapshotConnection: WebSocketConnection | null
     shotSettingsConnection: WebSocketConnection | null
     waterLevelsConnection: WebSocketConnection | null
+    
+    // Recent shot metrics
+    recentEspressoTime: number
+    recentEspressoMaxFlow: number
+    recentEspressoMaxPressure: number
+    recentEspressoMaxWeight: number
     
     connect: (url: string) => Promise<void>
     reconnect: () => Promise<void>
@@ -127,6 +139,14 @@ export const useDataStore = create<DataStore>((set, get) => {
                 reconnectTimer = null;
             }
             
+            // Clear shot timer if running
+            if (shotTimerInterval) {
+                clearInterval(shotTimerInterval);
+                shotTimerInterval = null;
+                shotStartTime = null;
+                shotElapsedTime = 0;
+            }
+            
             const { 
                 apiProvider,
                 machineSnapshotConnection,
@@ -176,6 +196,10 @@ export const useDataStore = create<DataStore>((set, get) => {
         scaleSnapshot,
         shotSettings: null,
         waterLevels: null,
+        recentEspressoTime: 0,
+        recentEspressoMaxFlow: 0,
+        recentEspressoMaxPressure: 0,
+        recentEspressoMaxWeight: 0,
         machineSnapshotConnection: null,
         scaleSnapshotConnection: null,
         shotSettingsConnection: null,
@@ -299,7 +323,105 @@ export const useDataStore = create<DataStore>((set, get) => {
                         () => apiProvider.websocket.connectToMachineSnapshot(),
                         'machine snapshot',
                         (data) => {
-                            set({ machineState: data });
+                            const previousState = get().machineState;
+                            const newState = data as MachineState;
+                            
+                            // Determine state keys for comparison
+                            const previousStateKey = previousState ? 
+                                `${previousState.state}.${previousState.substate}` : null;
+                            const newStateKey = `${newState.state}.${newState.substate}`;
+                            
+                            // Check for entering espresso preinfusion
+                            const isEnteringPreinfusion = newStateKey === 'espresso.preinfusion' && 
+                                                         previousStateKey !== 'espresso.preinfusion';
+                            
+                            // Check for exiting espresso (from any espresso substate)
+                            const isExitingEspresso = previousState && 
+                                                     previousState.state === 'espresso' && 
+                                                     newState.state !== 'espresso';
+                            
+                            // Track max values during the shot
+                            let maxFlow = 0;
+                            let maxPressure = 0;
+                            let maxWeight = 0;
+                            
+                            if (previousState && previousState.state === 'espresso') {
+                                // Track metrics during the shot
+                                maxFlow = Math.max(previousState.flow || 0, get().recentEspressoMaxFlow || 0);
+                                maxPressure = Math.max(previousState.pressure || 0, get().recentEspressoMaxPressure || 0);
+                                
+                                // Track max weight from scale if available
+                                const currentWeight = get().scaleSnapshot?.weight || 0;
+                                maxWeight = Math.max(currentWeight, get().recentEspressoMaxWeight || 0);
+                            }
+                            
+                            if (isEnteringPreinfusion) {
+                                // Start timer when entering preinfusion
+                                console.log('Starting shot timer');
+                                shotStartTime = Date.now();
+                                shotElapsedTime = 0;
+                                
+                                // Reset max values for a new shot
+                                maxFlow = 0;
+                                maxPressure = 0;
+                                maxWeight = 0;
+                                
+                                // Clear any existing timer just in case
+                                if (shotTimerInterval) {
+                                    clearInterval(shotTimerInterval);
+                                }
+                                
+                                // Create new timer that updates elapsed time every 100ms
+                                shotTimerInterval = setInterval(() => {
+                                    if (shotStartTime) {
+                                        shotElapsedTime = (Date.now() - shotStartTime) / 1000;
+                                        
+                                        // Update max values during shot
+                                        const machineState = get().machineState;
+                                        if (machineState && machineState.state === 'espresso') {
+                                            set({
+                                                recentEspressoMaxFlow: Math.max(machineState.flow || 0, get().recentEspressoMaxFlow || 0),
+                                                recentEspressoMaxPressure: Math.max(machineState.pressure || 0, get().recentEspressoMaxPressure || 0),
+                                                recentEspressoMaxWeight: Math.max(get().scaleSnapshot?.weight || 0, get().recentEspressoMaxWeight || 0)
+                                            });
+                                        }
+                                        
+                                        // Refresh the machine state UI by updating the timestamp
+                                        set({ machineState: { ...get().machineState!, timestamp: new Date().toISOString() } });
+                                    }
+                                }, 100);
+                            } else if (isExitingEspresso) {
+                                // Stop timer when exiting espresso state
+                                if (shotTimerInterval) {
+                                    clearInterval(shotTimerInterval);
+                                    shotTimerInterval = null;
+                                    
+                                    // Final update to ensure accuracy
+                                    if (shotStartTime) {
+                                        shotElapsedTime = (Date.now() - shotStartTime) / 1000;
+                                        console.log(`Shot ended. Duration: ${shotElapsedTime.toFixed(1)}s`);
+                                        
+                                        // Store the final shot time and max values in state
+                                        set({ 
+                                            recentEspressoTime: shotElapsedTime,
+                                            recentEspressoMaxFlow: get().recentEspressoMaxFlow,
+                                            recentEspressoMaxPressure: get().recentEspressoMaxPressure,
+                                            recentEspressoMaxWeight: get().recentEspressoMaxWeight
+                                        });
+                                        shotStartTime = null;
+                                    }
+                                }
+                            } else if (previousState && previousState.state === 'espresso') {
+                                // Continue updating max values during the shot
+                                set({
+                                    recentEspressoMaxFlow: maxFlow,
+                                    recentEspressoMaxPressure: maxPressure,
+                                    recentEspressoMaxWeight: maxWeight
+                                });
+                            }
+                            
+                            // Update state with new machine state
+                            set({ machineState: newState });
                         }
                     );
                     
@@ -995,4 +1117,34 @@ function getApiUrl(apiProvider: ApiProvider, fallbackUrl?: string): string {
     const { hostname, port, useSecureProtocol } = store.r1ConnectionSettings;
     const protocol = useSecureProtocol ? 'https' : 'http';
     return `${protocol}://${hostname}:${port}`;
+}
+
+// Add this function right before useScaleSnapshot()
+export function useShotTime() {
+    // When the machine is in an espresso state (preinfusion or pour), return the active shot timer
+    // Otherwise, return the last completed shot time
+    const machineState = useDataStore(state => state.machineState);
+    const recentEspressoTime = useDataStore(state => state.recentEspressoTime);
+    
+    if (!machineState) return 0;
+    
+    if (machineState.state === 'espresso') {
+        // Use the module-level variables to get the current shot time
+        return shotElapsedTime;
+    }
+    
+    return recentEspressoTime;
+}
+
+// Add functions to access the max values
+export function useMaxFlow() {
+    return useDataStore(state => state.recentEspressoMaxFlow);
+}
+
+export function useMaxPressure() {
+    return useDataStore(state => state.recentEspressoMaxPressure);
+}
+
+export function useMaxWeight() {
+    return useDataStore(state => state.recentEspressoMaxWeight);
 }
