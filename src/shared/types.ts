@@ -463,6 +463,7 @@ export enum MachineMode {
     Steam = 'Steam',
     Flush = 'Flush',
     Water = 'Water',
+    Server = 'Server',
 }
 
 export enum MajorState {
