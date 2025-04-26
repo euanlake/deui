@@ -10,6 +10,9 @@ import { ButtonTheme } from '../primitives/Button'
 // Local storage key for server address
 const SERVER_ADDRESS_STORAGE_KEY = 'deui_server_address'
 
+// Default server address for first-time users
+const DEFAULT_SERVER_ADDRESS = 'localhost:8080'
+
 type Props = Omit<ControlProps, 'fill' | 'pad'>
 
 export default function BackendAddressControl({ label = 'Connection', ...props }: Props) {
@@ -23,10 +26,11 @@ export default function BackendAddressControl({ label = 'Connection', ...props }
     // Create the URL display string from R1 connection settings (just host:port)
     const url = `${settings.hostname}:${settings.port}`
 
-    // Load saved server address from localStorage on mount
+    // Load saved server address from localStorage on mount or use default
     useEffect(() => {
         try {
             const savedAddress = localStorage.getItem(SERVER_ADDRESS_STORAGE_KEY)
+            
             if (savedAddress) {
                 // Remove protocol if present to get clean host:port
                 const cleanAddress = savedAddress.replace(/^(https?|wss?):\/\//, '')
@@ -42,11 +46,26 @@ export default function BackendAddressControl({ label = 'Connection', ...props }
                         useSecureProtocol: settings.useSecureProtocol
                     })
                 }
+            } else {
+                // For first-time users without saved settings, ensure we use the default
+                if (settings.hostname !== 'localhost' || settings.port !== 8080) {
+                    // Set default address if not already set
+                    updateSettings({
+                        hostname: 'localhost',
+                        port: 8080,
+                        // Keep existing secure protocol setting
+                        useSecureProtocol: settings.useSecureProtocol
+                    })
+                    
+                    // Save default to localStorage
+                    localStorage.setItem(SERVER_ADDRESS_STORAGE_KEY, DEFAULT_SERVER_ADDRESS)
+                    console.log(`Set default server address: ${DEFAULT_SERVER_ADDRESS}`)
+                }
             }
         } catch (e) {
             console.error('Error loading server address from localStorage:', e)
         }
-    }, [updateSettings, settings.useSecureProtocol])
+    }, [updateSettings, settings.useSecureProtocol, settings.hostname, settings.port])
 
     const handleEditClick = () => {
         setIsEditing(true)
