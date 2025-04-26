@@ -970,8 +970,11 @@ export function useAutoScaleConnection() {
                     
                     // If we found scales and the component is still mounted, auto-connect
                     if (mounted && scales?.length > 0 && typeof selectScale === 'function') {
-                        console.log('Auto-connecting to scale:', scales[0].name);
-                        await selectScale(scales[0].id);
+                        const firstScale = scales[0];
+                        if (firstScale) {
+                            console.log('Auto-connecting to scale:', firstScale.name);
+                            await selectScale(firstScale.id);
+                        }
                     }
                 }
             } catch (error) {

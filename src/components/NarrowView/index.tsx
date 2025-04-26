@@ -11,7 +11,7 @@ export default function NarrowView(props: HTMLAttributes<HTMLDivElement>) {
     const { setView, viewIndex, viewId } = useUiStore()
 
     const handlers = useSwipeable({
-        preventDefaultTouchmoveEvent: true,
+        trackTouch: true,
         onSwipedLeft() {
             setView('next')
         },
