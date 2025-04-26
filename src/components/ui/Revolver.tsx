@@ -77,7 +77,7 @@ export default function Revolver() {
     const [phase, setPhase] = useState(machineModeLineup.indexOf(machineMode))
 
     const handlers = useSwipeable({
-        preventDefaultTouchmoveEvent: true,
+        trackTouch: true,
         onSwipedUp() {
             setPhase((current) => current + 1)
         },
