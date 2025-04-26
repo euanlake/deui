@@ -7,6 +7,7 @@ import WaterBar from '$/components/ui/WaterBar'
 import PowerToggle from '$/components/ui/PowerToggle'
 import BackendAddressControl from '$/components/controls/BackendAddressControl'
 import StopAtVolumeControl from '$/components/controls/StopAtVolumeControl'
+import StopAtWeightControl from '$/components/controls/StopAtWeightControl'
 
 export default function SettingsView() {
     // Use a fixed water capacity value (same as in WaterBar)
@@ -16,6 +17,7 @@ export default function SettingsView() {
         <div tw="px-14">
             <BackendAddressControl />
             <StopAtVolumeControl />
+            <StopAtWeightControl />
             <Control
                 label={
                     <>
