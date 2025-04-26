@@ -29,41 +29,36 @@ export default function BackendAddressControl({ label = 'Connection', ...props }
     // Load saved server address from localStorage on mount or use default
     useEffect(() => {
         try {
+            // First try to get saved address from localStorage
             const savedAddress = localStorage.getItem(SERVER_ADDRESS_STORAGE_KEY)
             
             if (savedAddress) {
-                // Remove protocol if present to get clean host:port
+                // User has a saved address, use it
+                console.log(`Using saved server address: ${savedAddress}`);
                 const cleanAddress = savedAddress.replace(/^(https?|wss?):\/\//, '')
                 const [hostname, port] = cleanAddress.split(':')
                 
                 if (hostname && port && !isNaN(parseInt(port, 10))) {
-                    // Note: we don't need to set useSecureProtocol based on the saved address
-                    // as the REST adapter will use http/https and WebSocket adapter will use ws/wss
                     updateSettings({
                         hostname,
                         port: parseInt(port, 10),
-                        // Keep existing secure protocol setting
                         useSecureProtocol: settings.useSecureProtocol
                     })
                 }
-            } else {
-                // For first-time users without saved settings, ensure we use the default
-                if (settings.hostname !== 'localhost' || settings.port !== 8080) {
-                    // Set default address if not already set
-                    updateSettings({
-                        hostname: 'localhost',
-                        port: 8080,
-                        // Keep existing secure protocol setting
-                        useSecureProtocol: settings.useSecureProtocol
-                    })
-                    
-                    // Save default to localStorage
-                    localStorage.setItem(SERVER_ADDRESS_STORAGE_KEY, DEFAULT_SERVER_ADDRESS)
-                    console.log(`Set default server address: ${DEFAULT_SERVER_ADDRESS}`)
-                }
+            } else if (settings.hostname !== 'localhost' || settings.port !== 8080) {
+                // No saved address and not using the default, set to default
+                console.log(`No saved address, setting default: ${DEFAULT_SERVER_ADDRESS}`);
+                updateSettings({
+                    hostname: 'localhost',
+                    port: 8080,
+                    useSecureProtocol: settings.useSecureProtocol
+                })
+                
+                // Save default to localStorage
+                localStorage.setItem(SERVER_ADDRESS_STORAGE_KEY, DEFAULT_SERVER_ADDRESS)
             }
         } catch (e) {
-            console.error('Error loading server address from localStorage:', e)
+            console.error('Error handling server address:', e)
         }
     }, [updateSettings, settings.useSecureProtocol, settings.hostname, settings.port])
 
@@ -82,11 +77,9 @@ export default function BackendAddressControl({ label = 'Connection', ...props }
                 const portNumber = parseInt(port, 10)
                 
                 // Update settings in the store with the new hostname and port
-                // This will trigger a reconnect if already connected
                 updateSettings({
                     hostname,
                     port: portNumber,
-                    // Keep existing secure protocol setting
                     useSecureProtocol: settings.useSecureProtocol
                 })
                 
