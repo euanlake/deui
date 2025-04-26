@@ -945,6 +945,51 @@ export function useR1Availability() {
     return isAvailable;
 }
 
+/**
+ * Hook to automatically connect to available scales
+ */
+export function useAutoScaleConnection() {
+    const selectedScale = useDataStore(state => state.selectedScale);
+    const isR1Available = useR1Availability();
+    
+    useEffect(() => {
+        // Only look for scales if R1 is available and no scale is currently selected
+        if (!isR1Available || selectedScale) {
+            return;
+        }
+        
+        let mounted = true;
+        
+        const connectToScale = async () => {
+            try {
+                const { getScales, selectScale } = useDataStore.getState();
+                
+                // Safely get available scales
+                if (typeof getScales === 'function') {
+                    const scales = await getScales();
+                    
+                    // If we found scales and the component is still mounted, auto-connect
+                    if (mounted && scales?.length > 0 && typeof selectScale === 'function') {
+                        console.log('Auto-connecting to scale:', scales[0].name);
+                        await selectScale(scales[0].id);
+                    }
+                }
+            } catch (error) {
+                console.error('Error auto-connecting to scale:', error);
+            }
+        };
+        
+        // Call immediately and then set up interval
+        connectToScale();
+        const interval = setInterval(connectToScale, 7000); // Check for scales every 7 seconds
+        
+        return () => {
+            mounted = false;
+            clearInterval(interval);
+        };
+    }, [isR1Available, selectedScale]);
+}
+
 export function useAutoConnectEffect() {
     const { 
         r1ConnectionSettings, 

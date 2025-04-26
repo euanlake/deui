@@ -8,29 +8,29 @@ import { debounce } from 'lodash'
 import { useDataStore } from '$/stores/data'
 
 type Props = Omit<ControlProps, 'fill' | 'pad'> & {
-  defaultValue?: number;
-  onChange?: (value: number) => void;
+  defaultValue?: number | null;
+  onChange?: (value: number | null) => void;
 }
 
 export default function StopAtVolumeControl({ 
   label = 'Stop at Volume ML',
-  defaultValue = 0, 
+  defaultValue = null, 
   onChange,
   ...props 
 }: Props) {
-  const [valueString, setValueString] = useState(defaultValue.toString());
+  const [valueString, setValueString] = useState(defaultValue?.toString() || '');
   const { updateShotSettings } = useDataStore();
   
   useEffect(() => {
-    setValueString(defaultValue.toString());
+    setValueString(defaultValue?.toString() || '');
   }, [defaultValue]);
 
   const updateVolumeSetting = useCallback(
-    debounce(async (volume: number) => {
+    debounce(async (volume: number | null) => {
       try {
         // Create shot settings object with current volume and default values for other fields
         await updateShotSettings({
-          targetShotVolume: volume,
+          targetShotVolume: volume || 0,
           steamSetting: 1,
           targetSteamTemp: 150,
           targetSteamDuration: 30,
@@ -48,7 +48,7 @@ export default function StopAtVolumeControl({
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setValueString(e.target.value);
-    const numericValue = parseInt(e.target.value, 10) || 0;
+    const numericValue = e.target.value ? parseInt(e.target.value, 10) || 0 : null;
     if (onChange) {
       onChange(numericValue);
     }
@@ -58,9 +58,9 @@ export default function StopAtVolumeControl({
   const handleClear = () => {
     setValueString('');
     if (onChange) {
-      onChange(0);
+      onChange(null);
     }
-    updateVolumeSetting(0);
+    updateVolumeSetting(null);
   };
 
   return (

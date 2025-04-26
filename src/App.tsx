@@ -8,7 +8,7 @@ import NarrowView from '$/components/NarrowView'
 import { Container } from 'toasterhea'
 import { Layer } from '$/shared/types'
 import { useUiStore } from '$/stores/ui'
-import { useAutoConnectEffect, useDataStore } from '$/stores/data'
+import { useAutoConnectEffect, useDataStore, useAutoScaleConnection } from '$/stores/data'
 import Debug from '$/components/Debug'
 
 const App = () => {
@@ -16,6 +16,7 @@ const App = () => {
     const { loadProfilesFromFiles } = useDataStore()
 
     useAutoConnectEffect()
+    useAutoScaleConnection() // Auto-connect to available scales
 
     // Load profiles from the public/profiles folder on app start
     // This will also restore the last used profile from localStorage
